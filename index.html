@@ -1,0 +1,65 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Volume Profile Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { background-color: #0d1117; color: #c9d1d9; font-family: 'Consolas', 'Monaco', monospace; padding: 20px; }
+        .card { background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 15px; margin-bottom: 20px; }
+        .header { font-size: 1.2em; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #30363d; padding-bottom: 5px; }
+        .green { color: #3fb950; }
+        .red { color: #ff7b72; }
+        .yellow { color: #d29922; }
+        .cyan { color: #58a6ff; }
+        .bold { font-weight: bold; }
+        .row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+        .verdict { background-color: #161b22; border: 1px solid #8b949e; padding: 20px; margin-top: 30px; }
+        .verdict-title { font-size: 1.5em; text-align: center; margin-bottom: 15px; }
+        .update-time { color: #8b949e; font-size: 0.8em; text-align: center; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="update-time">最後更新 (UTC): 2026-01-17 17:11</div>
+    
+    
+        <div class="card">
+            <div class="header cyan">標普500 (SPY)</div>
+            <div class="row"><span>現價:</span> <span>691.66 <span class="cyan">(+5.46%)</span></span></div>
+            <div class="row"><span>POC:</span> <span>669.50</span></div>
+            <div class="row"><span>VAL:</span> <span>653.88</span></div>
+            <div class="row"><span>趨勢:</span> <span class="green">多頭 (MA200: 631)</span></div>
+            <hr style="border: 0; border-top: 1px dashed #30363d;">
+            <div class="row"><span>狀態:</span> <span class="cyan">多頭強勢區 (距 VAL 5.46%)</span></div>
+            <div class="row"><span>指令:</span> <span class="cyan bold">強勢持有</span></div>
+        </div>
+        
+        <div class="card">
+            <div class="header cyan">納指100 (QQQ)</div>
+            <div class="row"><span>現價:</span> <span>621.26 <span class="cyan">(+2.22%)</span></span></div>
+            <div class="row"><span>POC:</span> <span>611.06</span></div>
+            <div class="row"><span>VAL:</span> <span>607.48</span></div>
+            <div class="row"><span>趨勢:</span> <span class="green">多頭 (MA200: 564)</span></div>
+            <hr style="border: 0; border-top: 1px dashed #30363d;">
+            <div class="row"><span>狀態:</span> <span class="cyan">多頭強勢區 (距 VAL 2.22%)</span></div>
+            <div class="row"><span>指令:</span> <span class="cyan bold">強勢持有</span></div>
+        </div>
+        
+        <div class="card">
+            <div class="header cyan">羅素2000 (IWM)</div>
+            <div class="row"><span>現價:</span> <span>265.76 <span class="cyan">(+12.23%)</span></span></div>
+            <div class="row"><span>POC:</span> <span>244.59</span></div>
+            <div class="row"><span>VAL:</span> <span>233.25</span></div>
+            <div class="row"><span>趨勢:</span> <span class="green">多頭 (MA200: 227)</span></div>
+            <hr style="border: 0; border-top: 1px dashed #30363d;">
+            <div class="row"><span>狀態:</span> <span class="cyan">多頭強勢區 (距 VAL 12.23%)</span></div>
+            <div class="row"><span>指令:</span> <span class="cyan bold">強勢持有</span></div>
+        </div>
+        
+    <div class="verdict">
+        <div class="verdict-title cyan">😴 市場震盪：無訊號</div>
+        <div style="margin-left: 20px;"><ol><li>多看少做。</li><li>等待價格回到 VAL。</li><li>保持耐心。</li></ol></div>
+    </div>
+    
+</body>
+</html>
