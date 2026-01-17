@@ -1,0 +1,39 @@
+name: Daily Market Update
+
+on:
+  schedule:
+    # 設定執行時間：UTC 時間 21:30 (大約是美股收盤後)
+    # 每天執行
+    - cron: '30 21 * * *'
+  workflow_dispatch: # 允許你手動按按鈕執行
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run analysis script
+        run: python main.py
+
+      - name: Commit and Push changes
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add index.html
+          git commit -m "Auto-update market dashboard" || exit 0
+          git push
