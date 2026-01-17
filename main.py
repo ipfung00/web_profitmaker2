@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import datetime
 import os
+from zoneinfo import ZoneInfo
 
 # --- 設定目標 ---
 target_tickers = ['SPY', 'QQQ', 'IWM']
@@ -197,7 +198,7 @@ else:
     advice_html = "<ol><li>多看少做。</li><li>等待價格回到 VAL。</li><li>保持耐心。</li></ol>"
 
 final_html = html_template.format(
-    update_time=datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M'),
+    update_time=datetime.datetime.now(ZoneInfo("America/New_York")).strftime('%Y-%m-%d %H:%M'),
     content=f"""
     {cards_html}
     <div class="verdict">
@@ -212,3 +213,4 @@ with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
 print("HTML 生成完畢")
+
