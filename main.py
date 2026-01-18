@@ -157,7 +157,7 @@ for ticker in target_tickers:
         cards_html += f"""
         <div class="card">
             <div class="header {res['color_class']}">{res['name']}</div>
-            <div class="row"><span>現價:</span> <span>{res['price']:.2f} <span class="{res['color_class']}">({dist_str})</span></span></div>
+            <div class="row"><span>現價:</span> <span>{res['price']:.2f} <span class="{res['color_class']}"></span></span></div>
             <div class="row"><span>POC:</span> <span>{res['poc']:.2f}</span></div>
             <div class="row"><span>VAL:</span> <span>{res['val']:.2f}</span></div>
             <div class="row"><span>趨勢:</span> <span class="{res['trend_class']}">{res['trend_txt']} (MA200: {res['sma200']:.0f})</span></div>
@@ -213,4 +213,5 @@ with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
 print("HTML 生成完畢")
+
 
