@@ -7,46 +7,15 @@ import os
 import matplotlib
 matplotlib.use('Agg') # 設定後端為非互動模式
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
 import mplfinance as mpf
 import io
 import base64
 
 # ==========================================
-# 0. 字型自動修正 (Auto Font Fix)
+# 0. 系統設定
 # ==========================================
-def set_chinese_font():
-    # 常見的中文字型清單 (優先順序)
-    font_candidates = [
-        'Microsoft JhengHei', # Windows 正黑體
-        'SimHei',             # 常見開源黑體
-        'PingFang TC',        # Mac 蘋方
-        'Heiti TC',           # Mac 黑體
-        'WenQuanYi Zen Hei',  # Linux 文泉驛
-        'Noto Sans CJK TC',   # Linux Noto
-        'Arial Unicode MS'    # 通用
-    ]
-    
-    # 檢查系統可用字型
-    system_fonts = set(f.name for f in fm.fontManager.ttflist)
-    chosen_font = None
-    
-    for font in font_candidates:
-        if font in system_fonts:
-            chosen_font = font
-            break
-            
-    # 設定字型 (若都沒找到，Matplotlib 會回退到預設英文 sans-serif)
-    if chosen_font:
-        plt.rcParams['font.sans-serif'] = [chosen_font]
-        plt.rcParams['font.family'] = [chosen_font] # 強制 mplfinance 也用這個
-        print(f"✅ 已載入中文字型: {chosen_font}")
-    else:
-        print("⚠️ 未偵測到中文字型，圖表文字將顯示為英文或方塊。建議安裝 SimHei 或微軟正黑體。")
-
-    plt.rcParams['axes.unicode_minus'] = False # 讓負號正常顯示
-
-set_chinese_font()
+# 解決負號顯示問題
+plt.rcParams['axes.unicode_minus'] = False 
 
 # ==========================================
 # 1. 策略參數 (Final God Mode)
@@ -65,7 +34,6 @@ va_pct = 0.70
 
 # --- 繪圖風格 ---
 plt.style.use('dark_background')
-# 這裡不鎖死字型，讓上面的自動偵測決定
 mpf_style = mpf.make_mpf_style(base_mpf_style='nightclouds', rc={'axes.grid': False})
 
 # ==========================================
@@ -118,7 +86,7 @@ html_template = """
 """
 
 # ==========================================
-# 3. 繪圖函數
+# 3. 繪圖函數 (標籤改為英文)
 # ==========================================
 def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, vah_price, price_bins, vol_by_bin, bin_indices):
     fig = plt.figure(figsize=(10, 6), facecolor='#161b22')
@@ -133,11 +101,11 @@ def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, 
 
     mpf.plot(plot_slice, type='candle', style=mpf_style, ax=ax1, show_nontrading=False, datetime_format='%m-%d')
     
-    # 關鍵線位
+    # 關鍵線位 (使用英文標籤，避免方塊亂碼)
     if not np.isnan(sma200_val):
          ax1.axhline(y=sma200_val, color='gray', linestyle='--', linewidth=1, label='SMA200', alpha=0.7)
 
-    ax1.axhline(y=poc_price, color='#d29922', linewidth=1.5, linestyle='-', label='POC', alpha=0.9) # 移除中文，改英文標籤以防萬一
+    ax1.axhline(y=poc_price, color='#d29922', linewidth=1.5, linestyle='-', label='POC', alpha=0.9)
     ax1.axhline(y=val_price, color='#3fb950', linewidth=1, linestyle='--', label='VAL', alpha=0.9)
     ax1.axhline(y=vah_price, color='#ff7b72', linewidth=1, linestyle='--', label='VAH', alpha=0.9)
     
@@ -308,4 +276,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("Dashboard Updated (Fonts Fixed & VAL Dist Added)!")
+print("Dashboard Updated (Clean English Charts)!")
