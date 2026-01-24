@@ -5,14 +5,20 @@ import datetime
 from zoneinfo import ZoneInfo
 import os
 import matplotlib
-matplotlib.use('Agg') # 設定後端為非互動模式 (伺服器/GitHub Actions 專用)
+matplotlib.use('Agg') # 設定後端為非互動模式
 import matplotlib.pyplot as plt
 import mplfinance as mpf
 import io
 import base64
 
 # ==========================================
-# 1. 參數與全域設定
+# 0. 系統設定與字型修正
+# ==========================================
+plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
+plt.rcParams['axes.unicode_minus'] = False 
+
+# ==========================================
+# 1. 策略參數 (Final God Mode)
 # ==========================================
 target_tickers = ['SPY', 'QQQ', 'IWM']
 ticker_names = {
@@ -21,28 +27,26 @@ ticker_names = {
     'IWM': '羅素2000 (IWM)'
 }
 
-# --- 核心策略參數 ---
-lookback_days = 126   # 回溯天數 (約半年)
-bins_count = 70       # 籌碼分佈解析度 (小時線數據量夠大，使用 70)
-va_pct = 0.70         # 價值區涵蓋率 (70%)
-st_period = 10        # SuperTrend 週期
-st_multiplier = 3     # SuperTrend 倍數 (QQQ 最佳化參數)
+# --- 核心參數：根據掃描結果 (ROI +1142%) ---
+lookback_days = 69    # ✅ 黃金週期
+bins_count = 37       # ✅ 最佳解析度
+va_pct = 0.70         
 
-# --- 繪圖風格設定 ---
+# --- 繪圖風格 ---
 plt.style.use('dark_background')
-mpf_style = mpf.make_mpf_style(base_mpf_style='nightclouds', rc={'axes.grid': False})
+mpf_style = mpf.make_mpf_style(base_mpf_style='nightclouds', rc={'axes.grid': False, 'font.family': 'Microsoft JhengHei'})
 
 # ==========================================
-# 2. HTML 模板 (CSS 與結構)
+# 2. HTML 模板
 # ==========================================
 html_template = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Volume Profile Dashboard</title>
+    <title>Quant Trading Dashboard (Final Logic)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body {{ background-color: #0d1117; color: #c9d1d9; font-family: 'Consolas', 'Monaco', monospace; padding: 20px; }}
+        body {{ background-color: #0d1117; color: #c9d1d9; font-family: 'Microsoft JhengHei', 'Consolas', sans-serif; padding: 20px; }}
         .card {{ background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 15px; margin-bottom: 20px; }}
         .header {{ font-size: 1.2em; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #30363d; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }}
         .green {{ color: #3fb950; }}
@@ -57,98 +61,55 @@ html_template = """
         .update-time {{ color: #8b949e; font-size: 0.8em; text-align: center; margin-bottom: 20px; }}
         .chart-container {{ margin-top: 15px; text-align: center; border: 1px solid #30363d; }}
         .chart-img {{ max-width: 100%; height: auto; display: block; }}
-        .small-tag {{ font-size: 0.8em; padding: 2px 6px; border-radius: 4px; border: 1px solid; }}
-        ol {{ margin: 10px 0 0 0; padding-left: 25px; }}
-        li {{ margin-bottom: 5px; }}
+        .tag {{ font-size: 0.8em; padding: 2px 6px; border-radius: 4px; border: 1px solid; }}
+        
+        .maintenance-box {{ margin-top: 40px; padding: 15px; border-top: 1px solid #30363d; font-size: 0.9em; text-align: center; }}
+        .m-alert {{ color: #ff7b72; border: 1px solid #ff7b72; padding: 10px; border-radius: 6px; background-color: rgba(255, 123, 114, 0.1); }}
+        .m-normal {{ color: #8b949e; }}
     </style>
 </head>
 <body>
     <div class="update-time">最後更新 (美東時間): {update_time}</div>
+    <div style="text-align: center; margin-bottom: 20px; font-size: 0.9em; color: #8b949e;">
+        策略核心：POC 確保機制 (Hold the Line) | 參數: Lookback 69 / Bins 37
+    </div>
+    
     {content}
+
+    <div class="maintenance-box">
+        <div class="{m_class}">
+            🔧 系統維護提示: {m_msg}
+        </div>
+    </div>
 </body>
 </html>
 """
 
 # ==========================================
-# 3. 輔助函式庫 (SuperTrend & 繪圖)
+# 3. 繪圖函數
 # ==========================================
-
-def calculate_supertrend(df, period, multiplier):
-    """
-    計算 SuperTrend 指標 (迭代法)
-    """
-    high = df['High']
-    low = df['Low']
-    close = df['Close']
-    
-    # 計算 ATR (展開寫法確保精確)
-    tr1 = high - low
-    tr2 = (high - close.shift(1)).abs()
-    tr3 = (low - close.shift(1)).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    atr = tr.rolling(window=period).mean()
-    
-    # 計算基礎上下軌
-    hl2 = (high + low) / 2
-    basic_upper = hl2 + (multiplier * atr)
-    basic_lower = hl2 - (multiplier * atr)
-    
-    # 初始化結果 Series
-    final_upper = pd.Series(0.0, index=df.index)
-    final_lower = pd.Series(0.0, index=df.index)
-    trend = pd.Series(1, index=df.index) # 1: 多頭, -1: 空頭
-    
-    # 迭代計算
-    for i in range(period, len(df)):
-        # 計算 Final Upper
-        if basic_upper.iloc[i] < final_upper.iloc[i-1] or close.iloc[i-1] > final_upper.iloc[i-1]:
-            final_upper.iloc[i] = basic_upper.iloc[i]
-        else:
-            final_upper.iloc[i] = final_upper.iloc[i-1]
-            
-        # 計算 Final Lower
-        if basic_lower.iloc[i] > final_lower.iloc[i-1] or close.iloc[i-1] < final_lower.iloc[i-1]:
-            final_lower.iloc[i] = basic_lower.iloc[i]
-        else:
-            final_lower.iloc[i] = final_lower.iloc[i-1]
-            
-        # 判斷趨勢方向
-        if trend.iloc[i-1] == 1:
-            if close.iloc[i] < final_lower.iloc[i]:
-                trend.iloc[i] = -1
-            else:
-                trend.iloc[i] = 1
-        else:
-            if close.iloc[i] > final_upper.iloc[i]:
-                trend.iloc[i] = 1
-            else:
-                trend.iloc[i] = -1
-                
-    return trend
-
 def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, vah_price, price_bins, vol_by_bin, bin_indices):
-    """
-    生成 K 線圖與 Volume Profile 圖片 (Base64 編碼)
-    """
     fig = plt.figure(figsize=(10, 6), facecolor='#161b22')
     gs = fig.add_gridspec(1, 2,  width_ratios=(3, 1), left=0.05, right=0.95, wspace=0.05)
     ax1 = fig.add_subplot(gs[0])
     ax2 = fig.add_subplot(gs[1], sharey=ax1)
 
-    # 繪製 K 線 (只取最後 300 根以保持清晰度)
-    plot_slice = lookback_slice.iloc[-300:] 
-    mpf.plot(plot_slice, type='candle', style=mpf_style, ax=ax1, show_nontrading=False, datetime_format='%m-%d', warn_too_much_data=2000)
-    
-    # 繪製 SMA200 (水平參考線)
-    if not np.isnan(sma200_val):
-         ax1.axhline(y=sma200_val, color='gray', linestyle='--', linewidth=1, label='SMA200 (Daily)', alpha=0.7)
+    # 動態顯示 Lookback 週期 (讓圖表涵蓋完整籌碼堆積過程)
+    days_to_show = lookback_days + 1
+    cutoff_plot = lookback_slice.index[-1] - pd.Timedelta(days=days_to_show)
+    plot_slice = lookback_slice[lookback_slice.index > cutoff_plot]
 
-    # 繪製 VP 關鍵價位
-    ax1.axhline(y=poc_price, color='#d29922', linewidth=1.5, linestyle='-', label='POC')
-    ax1.axhline(y=val_price, color='#3fb950', linewidth=1, linestyle='--', label='VAL')
+    mpf.plot(plot_slice, type='candle', style=mpf_style, ax=ax1, show_nontrading=False, datetime_format='%m-%d')
+    
+    # 關鍵線位
+    if not np.isnan(sma200_val):
+         ax1.axhline(y=sma200_val, color='gray', linestyle='--', linewidth=1, label='SMA200 (生命線)', alpha=0.7)
+
+    ax1.axhline(y=poc_price, color='#d29922', linewidth=1.5, linestyle='-', label='POC (攻防線)')
+    ax1.axhline(y=val_price, color='#3fb950', linewidth=1, linestyle='--', label='VAL (抄底線)')
     ax1.axhline(y=vah_price, color='#ff7b72', linewidth=1, linestyle='--', label='VAH')
     
-    # 標示現價與文字
+    # 現價
     current_price = lookback_slice['Close'].iloc[-1]
     ax1.axhline(y=current_price, color='white', linewidth=0.8, linestyle=':')
     ax1.text(len(plot_slice) + 2, current_price, f'{current_price:.2f}', color='white', va='center', fontsize=9)
@@ -156,18 +117,15 @@ def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, 
     ax1.set_ylabel("Price")
     ax1.legend(fontsize='small', facecolor='#161b22', edgecolor='#30363d')
 
-    # 右側直方圖 (Volume Profile)
+    # 籌碼分佈
     is_in_va = (bin_indices >= bin_indices[price_bins == val_price][0]) & (bin_indices <= bin_indices[price_bins == vah_price][0])
     colors = np.where(is_in_va, '#58a6ff', '#30363d')
     poc_bin_idx = np.argmax(vol_by_bin)
-    colors[poc_bin_idx] = '#d29922'
+    colors[poc_bin_idx] = '#d29922' 
 
-    ax2.barh(price_bins, vol_by_bin, height=(price_bins[1]-price_bins[0])*0.8, align='center', color=colors, edgecolor=None, alpha=0.8)
-    ax2.set_xlabel("Volume")
-    ax2.tick_params(left=False, labelleft=False)
-    ax2.grid(False)
+    ax2.barh(price_bins, vol_by_bin, height=(price_bins[1]-price_bins[0])*0.8, align='center', color=colors, alpha=0.8)
+    ax2.axis('off') 
 
-    # 轉為 Base64
     buf = io.BytesIO()
     plt.savefig(buf, format='png', bbox_inches='tight', dpi=100, facecolor=fig.get_facecolor())
     buf.seek(0)
@@ -176,84 +134,33 @@ def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, 
     return img_base64
 
 # ==========================================
-# 4. 主計算邏輯
+# 4. 核心運算 (Final Logic Engine)
 # ==========================================
 def calculate_data(ticker):
     try:
-        # ----------------------------------
-        # 步驟 A: 獲取日線 (用於 趨勢, ATR, SuperTrend)
-        # ----------------------------------
         df_daily = yf.download(ticker, period="2y", interval="1d", progress=False)
-        
-        # 處理 MultiIndex 欄位
-        if isinstance(df_daily.columns, pd.MultiIndex): 
-            df_daily.columns = df_daily.columns.get_level_values(0)
-        
-        # 強制轉型 float
-        for col in ['Open', 'High', 'Low', 'Close', 'Volume']: 
-            if col in df_daily.columns:
-                df_daily[col] = df_daily[col].astype(float)
-        
-        # [Fix] 移除時區，避免與小時線比較時報錯
-        if df_daily.index.tz is not None: 
-            df_daily.index = df_daily.index.tz_localize(None)
+        if isinstance(df_daily.columns, pd.MultiIndex): df_daily.columns = df_daily.columns.get_level_values(0)
         
         if len(df_daily) < 200: return None
-        
-        # 指標 1: SMA200 (長期趨勢)
         sma200 = df_daily['Close'].rolling(window=200).mean().iloc[-1]
         current_price = df_daily['Close'].iloc[-1]
         is_bull_market = current_price > sma200
         
-        # 指標 2: ATR (恐慌濾網)
-        prev_close = df_daily['Close'].shift(1)
-        tr = pd.concat([
-            df_daily['High'] - df_daily['Low'], 
-            (df_daily['High'] - prev_close).abs(), 
-            (df_daily['Low'] - prev_close).abs()
-        ], axis=1).max(axis=1)
-        atr_14 = tr.rolling(window=14).mean().iloc[-1]
-        
-        # 恐慌判定: 當日震幅 > 1.8倍 ATR
-        today_range = df_daily['High'].iloc[-1] - df_daily['Low'].iloc[-1]
-        is_panic_day = today_range > (1.8 * atr_14)
-
-        # 指標 3: SuperTrend (短線狀態)
-        st_trend = calculate_supertrend(df_daily, st_period, st_multiplier)
-        current_st_dir = st_trend.iloc[-1]
-
-        # ----------------------------------
-        # 步驟 B: 獲取小時線 (用於 Volume Profile)
-        # ----------------------------------
         df_hourly = yf.download(ticker, period="730d", interval="1h", progress=False)
-        
-        if isinstance(df_hourly.columns, pd.MultiIndex): 
-            df_hourly.columns = df_hourly.columns.get_level_values(0)
-        for col in ['Open', 'High', 'Low', 'Close', 'Volume']: 
-            if col in df_hourly.columns:
-                df_hourly[col] = df_hourly[col].astype(float)
-        
-        if df_hourly.index.tz is not None: 
-            df_hourly.index = df_hourly.index.tz_localize(None)
+        if isinstance(df_hourly.columns, pd.MultiIndex): df_hourly.columns = df_hourly.columns.get_level_values(0)
         
         if len(df_hourly) == 0: return None
 
-        # 篩選過去 N 天數據
         cutoff = df_hourly.index[-1] - pd.Timedelta(days=lookback_days)
         df_slice = df_hourly[df_hourly.index > cutoff].copy()
         
-        # 使用 Typical Price 計算 VP
         p_slice = (df_slice['High'] + df_slice['Low'] + df_slice['Close']) / 3
         v_slice = df_slice['Volume']
         
-        # ----------------------------------
-        # 步驟 C: 計算 VP 關鍵價位 (POC, VAL, VAH)
-        # ----------------------------------
         min_p, max_p = p_slice.min(), p_slice.max()
         bins = np.linspace(min_p, max_p, bins_count)
         vol_bin = np.zeros(bins_count)
         
-        # 填入 Volume 到對應的 Price Bin
         for idx, v in zip(np.digitize(p_slice, bins), v_slice):
             if 0 <= idx < bins_count: vol_bin[idx] += v
             
@@ -264,80 +171,60 @@ def calculate_data(ticker):
             v_u = vol_bin[up+1] if up < bins_count-1 else 0
             v_d = vol_bin[low-1] if low > 0 else 0
             if v_u == 0 and v_d == 0: break
-            if v_u > v_d: 
-                up += 1; curr_v += v_u
-            else: 
-                low -= 1; curr_v += v_d
+            if v_u > v_d: up += 1; curr_v += v_u
+            else: low -= 1; curr_v += v_d
                 
         val_price, vah_price, poc_price = bins[low], bins[up], bins[poc_idx]
 
-        # ----------------------------------
-        # 步驟 D: 訊號判定 (Hybrid 邏輯)
-        # ----------------------------------
-        is_below_val = current_price < val_price
-        dist_pct = ((current_price - val_price) / current_price) * 100
+        # 計算距離
+        dist_pct_poc = ((current_price - poc_price) / current_price) * 100
+        dist_pct_val = ((current_price - val_price) / current_price) * 100 # 新增：距離 VAL %
         
         signal_code = 0
         action_html = ""
         status_html = ""
         color_class = ""
         
-        trend_txt = "多頭" if is_bull_market else "空頭"
-        trend_class = "green" if is_bull_market else "red"
-        st_status_txt = "向上" if current_st_dir == 1 else "修正"
-        
-        # [狀態顯示] ATR 狀態
-        atr_status_txt = "劇烈 (PANIC)" if is_panic_day else "正常"
-        
-        # 交易邏輯核心: 破 VAL 且 長期趨勢向上
-        is_buy_setup = is_below_val and is_bull_market
-        
-        if is_buy_setup:
-            # 優先檢查: 是否恐慌日?
-            if is_panic_day:
-                signal_code = 0 
-                color_class = "yellow"
-                action_html = "✋ 波動劇烈 (暫緩接刀)"
-                status_html = f"破 VAL 但 ATR 過熱 (震幅過大)"
-            else:
-                # 正常買點 (無阻擋)
-                signal_code = 1
-                color_class = "green"
-                # 區分順勢或逆勢 (UI提示用)
-                if current_st_dir == 1:
-                    action_html = "★ 強力買進 (完美回調)"
-                    status_html = f"破 VAL 且 SuperTrend 支撐有效"
-                else:
-                    action_html = "⚡ 逆勢買進 (Buy the Dip)"
-                    status_html = f"超賣回調 (SuperTrend 修正)"
-        
-        elif current_price > val_price and current_price < vah_price:
-            signal_code = 0
-            color_class = "yellow"
-            action_html = "觀望 / 區間操作"
-            status_html = f"價值區震盪"
-        elif is_below_val and not is_bull_market:
+        # 1. 熊市保護
+        if not is_bull_market:
             signal_code = -1
             color_class = "red"
-            action_html = "▼ 放空追殺 (Short)"
-            status_html = f"籌碼潰散 (破 MA200 & VAL)"
-        else: 
-            signal_code = 2
-            color_class = "cyan"
-            action_html = "強勢持有"
-            status_html = f"多頭強勢區"
+            action_html = "▼ 清倉離場 (Bear Market)"
+            status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200:.2f})。"
 
-        # 生成圖表 (Base64)
+        # 2. 牛市操作
+        else:
+            # A. 抄底模式
+            if current_price < val_price:
+                signal_code = 1
+                color_class = "green"
+                action_html = "★ 強力抄底 (Dip Buy)"
+                status_html = "價格回調至價值區下緣 (VAL)。<br>勝率最高點，買入並持有。"
+
+            # B. 追漲/確保模式
+            elif current_price > poc_price:
+                signal_code = 2
+                color_class = "cyan"
+                action_html = "▲ 強勢買進/續抱 (Reclaim)"
+                status_html = "價格站上 POC 分水嶺。<br>多頭強勢區，確保拎貨在手。"
+            
+            # C. 灰色決策區
+            else:
+                signal_code = 0
+                color_class = "yellow"
+                action_html = "⚠️ 關鍵決策 (Check POC)"
+                status_html = f"位於震盪區間 (VAL < P < POC)。<br>"
+                status_html += f"1. 若剛<b>跌破 POC</b>: <span class='red'>應已離場 (獲利了結)</span><br>"
+                status_html += f"2. 若從<b>底部上來</b>: <span class='green'>續抱 (目標 POC)</span>"
+
         chart_base64 = generate_chart(df_hourly, df_slice, sma200, poc_price, val_price, vah_price, bins, vol_bin, np.arange(bins_count))
 
-        # 回傳完整數據字典
         return {
             'name': ticker_names[ticker], 'ticker': ticker, 'price': current_price,
             'poc': poc_price, 'val': val_price, 'sma200': sma200,
-            'trend_txt': trend_txt, 'trend_class': trend_class,
+            'dist_pct_val': dist_pct_val, # 回傳距離數據
             'status_html': status_html, 'action_html': action_html, 'color_class': color_class,
-            'signal_code': signal_code, 'dist_pct': dist_pct, 'chart_base64': chart_base64,
-            'atr': atr_14, 'st_status': st_status_txt, 'atr_status': atr_status_txt
+            'signal_code': signal_code, 'dist_pct': dist_pct_poc, 'chart_base64': chart_base64
         }
     except Exception as e:
         print(f"Error processing {ticker}: {e}")
@@ -349,56 +236,52 @@ def calculate_data(ticker):
 cards_html = ""
 market_signals = {}
 
-print("Starting analysis...")
-
 for ticker in target_tickers:
-    print(f"Analyzing {ticker}...")
     res = calculate_data(ticker)
     if res:
         market_signals[ticker] = res['signal_code']
-        header = f'<div class="header {res["color_class"]}"><span>{res["name"]}</span><span class="small-tag {res["color_class"]}" style="border-color: currentColor;">{res["ticker"]}</span></div>'
+        header = f'<div class="header {res["color_class"]}"><span>{res["name"]}</span><span class="tag {res["color_class"]}" style="border-color: currentColor;">{res["ticker"]}</span></div>'
         
-        # 卡片內容
         cards_html += f"""
         <div class="card">
             {header}
             <div class="row"><span>現價:</span> <span>{res['price']:.2f}</span></div>
-            <div class="row"><span>POC:</span> <span>{res['poc']:.2f}</span></div>
-            <div class="row"><span>VAL:</span> <span>{res['val']:.2f}</span></div>
-            <div class="row"><span>距離 VAL:</span> <span class="{res['color_class']}">{res['dist_pct']:+.2f}%</span></div>
-            
-            <div class="row"><span>趨勢:</span> <span class="{res['trend_class']}">{res['trend_txt']} (MA200: {res['sma200']:.0f})</span></div>
-            <div class="row"><span>短線(ST):</span> <span class="gray">{res['st_status']}</span></div>
-            <div class="row"><span>波動(ATR):</span> <span class="gray">{res['atr_status']} ({res['atr']:.2f})</span></div>
-            
+            <div class="row"><span>POC (分水嶺):</span> <span style="color:#d29922">{res['poc']:.2f}</span></div>
+            <div class="row"><span>VAL (抄底線):</span> <span style="color:#3fb950">{res['val']:.2f}</span></div>
+            <div class="row"><span>距離 VAL:</span> <span style="color:#3fb950">{res['dist_pct_val']:+.2f}%</span></div> <div class="row"><span>SMA200 (生命線):</span> <span style="color:gray">{res['sma200']:.2f}</span></div>
             <hr style="border: 0; border-top: 1px dashed #30363d;">
             <div class="row"><span>狀態:</span> <span class="{res['color_class']}">{res['status_html']}</span></div>
-            <div class="row"><span>指令:</span> <span class="{res['color_class']} bold">{res['action_html']}</span></div>
+            <div class="row"><span>指令:</span> <span class="{res['color_class']} bold" style="font-size:1.2em">{res['action_html']}</span></div>
             <div class="chart-container"><img class="chart-img" src="data:image/png;base64,{res['chart_base64']}"></div>
         </div>
         """
 
-# 戰略總結 (Verdict Logic)
-s_spy, s_qqq, s_iwm = market_signals.get('SPY', 0), market_signals.get('QQQ', 0), market_signals.get('IWM', 0)
-
-if s_spy == -1 and s_qqq == -1 and s_iwm == -1:
-    v_html, v_cls, adv = "🚨 崩盤警報：系統性殺盤", "red", "<ol><li>清空多單，現金為王。</li><li>反手做空 IWM。</li><li>不要接刀。</li></ol>"
-elif s_iwm == -1 and (s_qqq >= 0 or s_spy >= 0):
-    v_html, v_cls, adv = "⚠️ 變盤預警：金絲雀已死", "yellow", "<ol><li>市場風險急升。</li><li>縮緊科技股止損。</li><li>禁止加倉。</li></ol>"
-elif s_spy == 1 and s_qqq == 1:
-    v_html, v_cls, adv = "🔥 黃金機會：完美回調", "green", "<ol><li>大膽買進 QQQ 與 SPY。</li><li>設定今日低點為防守。</li><li>勝率極高。</li></ol>"
-elif s_qqq == 1 and s_iwm >= 0:
-    v_html, v_cls, adv = "✅ 科技股上車機會", "green", "<ol><li>IWM 未死，良性回調。</li><li>分批承接 QQQ。</li></ol>"
+s_qqq = market_signals.get('QQQ', 0)
+if s_qqq == -1:
+    v_title, v_cls, v_msg = "🚨 熊市警報 (Bear Market)", "red", "QQQ 跌破年線，清空持倉，保留現金。"
+elif s_qqq == 1:
+    v_title, v_cls, v_msg = "🎯 絕佳買點 (Dip Buy)", "green", "價格回測 VAL 支撐，期望值極高，果斷買入。"
+elif s_qqq == 2:
+    v_title, v_cls, v_msg = "🚀 趨勢強勢 (Trend Run)", "cyan", "價格站穩 POC 之上，空手者立即買回，持倉者抱緊。"
 else:
-    v_html, v_cls, adv = "😴 市場震盪 / 波動保護", "cyan", "<ol><li>多看少做。</li><li>等待價格回到 VAL。</li><li>避開高波動日。</li></ol>"
+    v_title, v_cls, v_msg = "⚖️ 多空對峙 (Indecision)", "yellow", "價格在震盪區。若剛跌破 POC 先離場；若持底倉則續抱。"
 
-# 輸出 HTML 檔案
+day_of_month = datetime.datetime.now().day
+if day_of_month <= 5:
+    m_class = "m-alert"
+    m_msg = f"⚠️ <b>月初健檢時間！</b>請執行 <code>monitor_robustness_global.py</code> 確認參數 (69/37) 是否依然是全域王者。"
+else:
+    m_class = "m-normal"
+    m_msg = "參數魯棒性監測：建議每月 1~5 號執行一次全域掃描。"
+
 final_html = html_template.format(
     update_time=datetime.datetime.now(ZoneInfo("America/New_York")).strftime('%Y-%m-%d %H:%M'), 
-    content=f"{cards_html}<div class='verdict'><div class='verdict-title {v_cls}'>{v_html}</div><div style='margin-left: 20px;'>{adv}</div></div>"
+    content=f"{cards_html}<div class='verdict'><div class='verdict-title {v_cls}'>{v_title}</div><div style='margin-left: 20px;'>{v_msg}</div></div>",
+    m_class=m_class,
+    m_msg=m_msg
 )
 
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("Main script updated successfully! (Audit Passed)")
+print("Dashboard Updated with VAL Distance!")
