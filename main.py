@@ -18,7 +18,7 @@ import base64
 plt.rcParams['axes.unicode_minus'] = False 
 
 # ==========================================
-# 1. 策略參數 (Final God Mode)
+# 1. 策略參數 (Robust Champion Version)
 # ==========================================
 target_tickers = ['SPY', 'QQQ', 'IWM']
 ticker_names = {
@@ -27,10 +27,12 @@ ticker_names = {
     'IWM': '羅素2000 (IWM)'
 }
 
-# --- 核心參數：根據掃描結果 (ROI +1142%) ---
-lookback_days = 69    # ✅ 黃金週期
-bins_count = 37       # ✅ 最佳解析度
-va_pct = 0.70         
+# --- 核心參數：經過壓力測試的最穩健組合 ---
+# 測試結論：雖然 0.62/71 獲利較高，但 Lookback 敏感度過高 (1.178)。
+# 我們選擇 0.70/69，因為它的 Lookback 穩定度是完美的 1.001 (高原結構)。
+lookback_days = 69    # 🛡️ 穩健王者 (Lookback Robustness: 1.001)
+bins_count = 37       # 🛡️ 最佳解析度
+va_pct = 0.70         # 🛡️ 統計學標準 (VA Robustness: 1.002)
 
 # --- 繪圖風格 ---
 plt.style.use('dark_background')
@@ -43,7 +45,7 @@ html_template = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Quant Trading Dashboard (Final Logic)</title>
+    <title>Quant Trading Dashboard (Robust)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {{ background-color: #0d1117; color: #c9d1d9; font-family: 'Microsoft JhengHei', 'Consolas', sans-serif; padding: 20px; }}
@@ -71,7 +73,7 @@ html_template = """
 <body>
     <div class="update-time">最後更新 (美東時間): {update_time}</div>
     <div style="text-align: center; margin-bottom: 20px; font-size: 0.9em; color: #8b949e;">
-        策略核心：POC 確保機制 (Hold the Line) | 參數: Lookback 69 / Bins 37
+        策略核心：POC 確保機制 (Hold the Line) | 參數: Lookback 69 / Bins 37 / VA 0.70
     </div>
     
     {content}
@@ -86,7 +88,7 @@ html_template = """
 """
 
 # ==========================================
-# 3. 繪圖函數 (標籤改為英文)
+# 3. 繪圖函數 (英文標籤)
 # ==========================================
 def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, vah_price, price_bins, vol_by_bin, bin_indices):
     fig = plt.figure(figsize=(10, 6), facecolor='#161b22')
@@ -101,7 +103,7 @@ def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, 
 
     mpf.plot(plot_slice, type='candle', style=mpf_style, ax=ax1, show_nontrading=False, datetime_format='%m-%d')
     
-    # 關鍵線位 (使用英文標籤，避免方塊亂碼)
+    # 關鍵線位 (英文標籤)
     if not np.isnan(sma200_val):
          ax1.axhline(y=sma200_val, color='gray', linestyle='--', linewidth=1, label='SMA200', alpha=0.7)
 
@@ -261,7 +263,7 @@ else:
 day_of_month = datetime.datetime.now().day
 if day_of_month <= 5:
     m_class = "m-alert"
-    m_msg = f"⚠️ <b>月初健檢時間！</b>請執行 <code>monitor_robustness_global.py</code> 確認參數 (69/37) 是否依然是全域王者。"
+    m_msg = f"⚠️ <b>月初健檢時間！</b>請執行 <code>check_overfitting.py</code> 再次確認 69/37/0.70 的穩定性。"
 else:
     m_class = "m-normal"
     m_msg = "參數魯棒性監測：建議每月 1~5 號執行一次全域掃描。"
@@ -276,4 +278,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("Dashboard Updated (Clean English Charts)!")
+print("Dashboard Updated to Robust Version (69/37/0.70)!")
