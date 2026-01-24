@@ -7,15 +7,46 @@ import os
 import matplotlib
 matplotlib.use('Agg') # 設定後端為非互動模式
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import mplfinance as mpf
 import io
 import base64
 
 # ==========================================
-# 0. 系統設定與字型修正
+# 0. 字型自動修正 (Auto Font Fix)
 # ==========================================
-plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
-plt.rcParams['axes.unicode_minus'] = False 
+def set_chinese_font():
+    # 常見的中文字型清單 (優先順序)
+    font_candidates = [
+        'Microsoft JhengHei', # Windows 正黑體
+        'SimHei',             # 常見開源黑體
+        'PingFang TC',        # Mac 蘋方
+        'Heiti TC',           # Mac 黑體
+        'WenQuanYi Zen Hei',  # Linux 文泉驛
+        'Noto Sans CJK TC',   # Linux Noto
+        'Arial Unicode MS'    # 通用
+    ]
+    
+    # 檢查系統可用字型
+    system_fonts = set(f.name for f in fm.fontManager.ttflist)
+    chosen_font = None
+    
+    for font in font_candidates:
+        if font in system_fonts:
+            chosen_font = font
+            break
+            
+    # 設定字型 (若都沒找到，Matplotlib 會回退到預設英文 sans-serif)
+    if chosen_font:
+        plt.rcParams['font.sans-serif'] = [chosen_font]
+        plt.rcParams['font.family'] = [chosen_font] # 強制 mplfinance 也用這個
+        print(f"✅ 已載入中文字型: {chosen_font}")
+    else:
+        print("⚠️ 未偵測到中文字型，圖表文字將顯示為英文或方塊。建議安裝 SimHei 或微軟正黑體。")
+
+    plt.rcParams['axes.unicode_minus'] = False # 讓負號正常顯示
+
+set_chinese_font()
 
 # ==========================================
 # 1. 策略參數 (Final God Mode)
@@ -34,7 +65,8 @@ va_pct = 0.70
 
 # --- 繪圖風格 ---
 plt.style.use('dark_background')
-mpf_style = mpf.make_mpf_style(base_mpf_style='nightclouds', rc={'axes.grid': False, 'font.family': 'Microsoft JhengHei'})
+# 這裡不鎖死字型，讓上面的自動偵測決定
+mpf_style = mpf.make_mpf_style(base_mpf_style='nightclouds', rc={'axes.grid': False})
 
 # ==========================================
 # 2. HTML 模板
@@ -94,7 +126,7 @@ def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, 
     ax1 = fig.add_subplot(gs[0])
     ax2 = fig.add_subplot(gs[1], sharey=ax1)
 
-    # 動態顯示 Lookback 週期 (讓圖表涵蓋完整籌碼堆積過程)
+    # 動態顯示 Lookback 週期
     days_to_show = lookback_days + 1
     cutoff_plot = lookback_slice.index[-1] - pd.Timedelta(days=days_to_show)
     plot_slice = lookback_slice[lookback_slice.index > cutoff_plot]
@@ -103,11 +135,11 @@ def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, 
     
     # 關鍵線位
     if not np.isnan(sma200_val):
-         ax1.axhline(y=sma200_val, color='gray', linestyle='--', linewidth=1, label='SMA200 (生命線)', alpha=0.7)
+         ax1.axhline(y=sma200_val, color='gray', linestyle='--', linewidth=1, label='SMA200', alpha=0.7)
 
-    ax1.axhline(y=poc_price, color='#d29922', linewidth=1.5, linestyle='-', label='POC (攻防線)')
-    ax1.axhline(y=val_price, color='#3fb950', linewidth=1, linestyle='--', label='VAL (抄底線)')
-    ax1.axhline(y=vah_price, color='#ff7b72', linewidth=1, linestyle='--', label='VAH')
+    ax1.axhline(y=poc_price, color='#d29922', linewidth=1.5, linestyle='-', label='POC', alpha=0.9) # 移除中文，改英文標籤以防萬一
+    ax1.axhline(y=val_price, color='#3fb950', linewidth=1, linestyle='--', label='VAL', alpha=0.9)
+    ax1.axhline(y=vah_price, color='#ff7b72', linewidth=1, linestyle='--', label='VAH', alpha=0.9)
     
     # 現價
     current_price = lookback_slice['Close'].iloc[-1]
@@ -176,39 +208,30 @@ def calculate_data(ticker):
                 
         val_price, vah_price, poc_price = bins[low], bins[up], bins[poc_idx]
 
-        # 計算距離
         dist_pct_poc = ((current_price - poc_price) / current_price) * 100
-        dist_pct_val = ((current_price - val_price) / current_price) * 100 # 新增：距離 VAL %
+        dist_pct_val = ((current_price - val_price) / current_price) * 100 
         
         signal_code = 0
         action_html = ""
         status_html = ""
         color_class = ""
         
-        # 1. 熊市保護
         if not is_bull_market:
             signal_code = -1
             color_class = "red"
             action_html = "▼ 清倉離場 (Bear Market)"
             status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200:.2f})。"
-
-        # 2. 牛市操作
         else:
-            # A. 抄底模式
             if current_price < val_price:
                 signal_code = 1
                 color_class = "green"
                 action_html = "★ 強力抄底 (Dip Buy)"
                 status_html = "價格回調至價值區下緣 (VAL)。<br>勝率最高點，買入並持有。"
-
-            # B. 追漲/確保模式
             elif current_price > poc_price:
                 signal_code = 2
                 color_class = "cyan"
                 action_html = "▲ 強勢買進/續抱 (Reclaim)"
                 status_html = "價格站上 POC 分水嶺。<br>多頭強勢區，確保拎貨在手。"
-            
-            # C. 灰色決策區
             else:
                 signal_code = 0
                 color_class = "yellow"
@@ -222,7 +245,7 @@ def calculate_data(ticker):
         return {
             'name': ticker_names[ticker], 'ticker': ticker, 'price': current_price,
             'poc': poc_price, 'val': val_price, 'sma200': sma200,
-            'dist_pct_val': dist_pct_val, # 回傳距離數據
+            'dist_pct_val': dist_pct_val, 
             'status_html': status_html, 'action_html': action_html, 'color_class': color_class,
             'signal_code': signal_code, 'dist_pct': dist_pct_poc, 'chart_base64': chart_base64
         }
@@ -248,7 +271,8 @@ for ticker in target_tickers:
             <div class="row"><span>現價:</span> <span>{res['price']:.2f}</span></div>
             <div class="row"><span>POC (分水嶺):</span> <span style="color:#d29922">{res['poc']:.2f}</span></div>
             <div class="row"><span>VAL (抄底線):</span> <span style="color:#3fb950">{res['val']:.2f}</span></div>
-            <div class="row"><span>距離 VAL:</span> <span style="color:#3fb950">{res['dist_pct_val']:+.2f}%</span></div> <div class="row"><span>SMA200 (生命線):</span> <span style="color:gray">{res['sma200']:.2f}</span></div>
+            <div class="row"><span>距離 VAL:</span> <span style="color:#3fb950">{res['dist_pct_val']:+.2f}%</span></div>
+            <div class="row"><span>SMA200 (生命線):</span> <span style="color:gray">{res['sma200']:.2f}</span></div>
             <hr style="border: 0; border-top: 1px dashed #30363d;">
             <div class="row"><span>狀態:</span> <span class="{res['color_class']}">{res['status_html']}</span></div>
             <div class="row"><span>指令:</span> <span class="{res['color_class']} bold" style="font-size:1.2em">{res['action_html']}</span></div>
@@ -284,4 +308,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("Dashboard Updated with VAL Distance!")
+print("Dashboard Updated (Fonts Fixed & VAL Dist Added)!")
