@@ -14,11 +14,10 @@ import base64
 # ==========================================
 # 0. 系統設定
 # ==========================================
-# 解決負號顯示問題
 plt.rcParams['axes.unicode_minus'] = False 
 
 # ==========================================
-# 1. 策略參數 (Robust Champion Version)
+# 1. 策略參數 (Plateau Edition)
 # ==========================================
 target_tickers = ['SPY', 'QQQ', 'IWM']
 ticker_names = {
@@ -27,14 +26,14 @@ ticker_names = {
     'IWM': '羅素2000 (IWM)'
 }
 
-# --- 核心參數：經過壓力測試的最穩健組合 ---
-# 測試結論：雖然 0.62/71 獲利較高，但 Lookback 敏感度過高 (1.178)。
-# 我們選擇 0.70/69，因為它的 Lookback 穩定度是完美的 1.001 (高原結構)。
-lookback_days = 69    # 🛡️ 穩健王者 (Lookback Robustness: 1.001)
-bins_count = 37       # 🛡️ 最佳解析度
-va_pct = 0.70         # 🛡️ 統計學標準 (VA Robustness: 1.002)
+# --- 核心參數：基於 2006-2026 精細掃描 ---
+# 冠軍數據：ROI +1223% (Plateau Score 最高)
+# 參數特性：位於 Bins 21 的黃金山脈中心，容錯率極高。
+lookback_days = 55    # 🛡️ 高原中心 (Stable Center)
+bins_count = 21       # 🛡️ 黃金解析度 (Golden Bins)
+va_pct = 0.51         # 🛡️ 核心價值 (Core Value)
 
-# --- 繪圖風格 ---
+# 繪圖風格
 plt.style.use('dark_background')
 mpf_style = mpf.make_mpf_style(base_mpf_style='nightclouds', rc={'axes.grid': False})
 
@@ -45,21 +44,30 @@ html_template = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Quant Trading Dashboard (Robust)</title>
+    <title>Quant Trading Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body {{ background-color: #0d1117; color: #c9d1d9; font-family: 'Microsoft JhengHei', 'Consolas', sans-serif; padding: 20px; }}
+        body {{ background-color: #0d1117; color: #c9d1d9; font-family: 'Microsoft JhengHei', 'Consolas', sans-serif; padding: 20px; margin: 0; }}
+        
+        .nav {{ display: flex; border-bottom: 1px solid #30363d; margin-bottom: 20px; }}
+        .nav-item {{ padding: 10px 20px; text-decoration: none; color: #8b949e; font-weight: bold; }}
+        .nav-item.active {{ color: #58a6ff; border-bottom: 2px solid #58a6ff; }}
+
         .card {{ background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 15px; margin-bottom: 20px; }}
         .header {{ font-size: 1.2em; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #30363d; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }}
+        
         .green {{ color: #3fb950; }}
         .red {{ color: #ff7b72; }}
         .yellow {{ color: #d29922; }}
         .cyan {{ color: #58a6ff; }}
         .gray {{ color: #8b949e; }}
+        
         .bold {{ font-weight: bold; }}
         .row {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
+        
         .verdict {{ background-color: #161b22; border: 1px solid #8b949e; padding: 20px; margin-top: 30px; }}
         .verdict-title {{ font-size: 1.5em; text-align: center; margin-bottom: 15px; font-weight: bold; }}
+        
         .update-time {{ color: #8b949e; font-size: 0.8em; text-align: center; margin-bottom: 20px; }}
         .chart-container {{ margin-top: 15px; text-align: center; border: 1px solid #30363d; }}
         .chart-img {{ max-width: 100%; height: auto; display: block; }}
@@ -71,9 +79,14 @@ html_template = """
     </style>
 </head>
 <body>
+    <div class="nav">
+        <a href="index.html" class="nav-item active">🚀 策略訊號 (Signals)</a>
+        <a href="structure.html" class="nav-item">🏗️ 市場結構 (Structure)</a>
+    </div>
+
     <div class="update-time">最後更新 (美東時間): {update_time}</div>
     <div style="text-align: center; margin-bottom: 20px; font-size: 0.9em; color: #8b949e;">
-        策略核心：POC 確保機制 (Hold the Line) | 參數: Lookback 69 / Bins 37 / VA 0.70
+        策略核心：全日線邏輯 (Daily Logic) | 參數: LB {lookback} / Bins {bins} / VA {va}
     </div>
     
     {content}
@@ -88,22 +101,17 @@ html_template = """
 """
 
 # ==========================================
-# 3. 繪圖函數 (英文標籤)
+# 3. 繪圖函數 (Daily Candles)
 # ==========================================
-def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, vah_price, price_bins, vol_by_bin, bin_indices):
+def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, vah_price, price_bins, vol_by_bin, bin_indices):
     fig = plt.figure(figsize=(10, 6), facecolor='#161b22')
     gs = fig.add_gridspec(1, 2,  width_ratios=(3, 1), left=0.05, right=0.95, wspace=0.05)
     ax1 = fig.add_subplot(gs[0])
     ax2 = fig.add_subplot(gs[1], sharey=ax1)
 
-    # 動態顯示 Lookback 週期
-    days_to_show = lookback_days + 1
-    cutoff_plot = lookback_slice.index[-1] - pd.Timedelta(days=days_to_show)
-    plot_slice = lookback_slice[lookback_slice.index > cutoff_plot]
-
-    mpf.plot(plot_slice, type='candle', style=mpf_style, ax=ax1, show_nontrading=False, datetime_format='%m-%d')
+    # 繪製 K 線 (日線)
+    mpf.plot(lookback_slice, type='candle', style=mpf_style, ax=ax1, show_nontrading=False, datetime_format='%Y-%m-%d')
     
-    # 關鍵線位 (英文標籤)
     if not np.isnan(sma200_val):
          ax1.axhline(y=sma200_val, color='gray', linestyle='--', linewidth=1, label='SMA200', alpha=0.7)
 
@@ -111,15 +119,14 @@ def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, 
     ax1.axhline(y=val_price, color='#3fb950', linewidth=1, linestyle='--', label='VAL', alpha=0.9)
     ax1.axhline(y=vah_price, color='#ff7b72', linewidth=1, linestyle='--', label='VAH', alpha=0.9)
     
-    # 現價
     current_price = lookback_slice['Close'].iloc[-1]
     ax1.axhline(y=current_price, color='white', linewidth=0.8, linestyle=':')
-    ax1.text(len(plot_slice) + 2, current_price, f'{current_price:.2f}', color='white', va='center', fontsize=9)
+    ax1.text(len(lookback_slice) + 1, current_price, f'{current_price:.2f}', color='white', va='center', fontsize=9)
 
     ax1.set_ylabel("Price")
     ax1.legend(fontsize='small', facecolor='#161b22', edgecolor='#30363d')
 
-    # 籌碼分佈
+    # Volume Profile
     is_in_va = (bin_indices >= bin_indices[price_bins == val_price][0]) & (bin_indices <= bin_indices[price_bins == vah_price][0])
     colors = np.where(is_in_va, '#58a6ff', '#30363d')
     poc_bin_idx = np.argmax(vol_by_bin)
@@ -136,11 +143,12 @@ def generate_chart(df_hourly, lookback_slice, sma200_val, poc_price, val_price, 
     return img_base64
 
 # ==========================================
-# 4. 核心運算 (Final Logic Engine)
+# 4. 核心運算 (Daily Logic)
 # ==========================================
 def calculate_data(ticker):
     try:
-        df_daily = yf.download(ticker, period="2y", interval="1d", progress=False)
+        # 1. 取得日線數據 (3年, 確保足夠數據)
+        df_daily = yf.download(ticker, period="3y", interval="1d", progress=False)
         if isinstance(df_daily.columns, pd.MultiIndex): df_daily.columns = df_daily.columns.get_level_values(0)
         
         if len(df_daily) < 200: return None
@@ -148,27 +156,29 @@ def calculate_data(ticker):
         current_price = df_daily['Close'].iloc[-1]
         is_bull_market = current_price > sma200
         
-        df_hourly = yf.download(ticker, period="730d", interval="1h", progress=False)
-        if isinstance(df_hourly.columns, pd.MultiIndex): df_hourly.columns = df_hourly.columns.get_level_values(0)
+        # 2. 切割數據 (只取最後 lookback_days 天)
+        df_slice = df_daily.iloc[-lookback_days:].copy()
         
-        if len(df_hourly) == 0: return None
-
-        cutoff = df_hourly.index[-1] - pd.Timedelta(days=lookback_days)
-        df_slice = df_hourly[df_hourly.index > cutoff].copy()
-        
+        # 3. 計算 Volume Profile (Daily Approximation)
+        # 使用 Typical Price = (H+L+C)/3
         p_slice = (df_slice['High'] + df_slice['Low'] + df_slice['Close']) / 3
         v_slice = df_slice['Volume']
         
         min_p, max_p = p_slice.min(), p_slice.max()
         bins = np.linspace(min_p, max_p, bins_count)
-        vol_bin = np.zeros(bins_count)
         
-        for idx, v in zip(np.digitize(p_slice, bins), v_slice):
-            if 0 <= idx < bins_count: vol_bin[idx] += v
-            
+        # 使用 numpy histogram 加速並保持邏輯一致
+        vol_bin, bin_edges = np.histogram(p_slice, bins=bins_count, weights=v_slice)
+        
+        # 找 POC (使用 bin 中點)
         poc_idx = np.argmax(vol_bin)
+        bin_mids = (bin_edges[:-1] + bin_edges[1:]) / 2
+        poc_price = bin_mids[poc_idx]
+        
+        # 找 VAL
         target_v = vol_bin.sum() * va_pct
-        curr_v, up, low = vol_bin[poc_idx], poc_idx, poc_idx
+        curr_v = vol_bin[poc_idx]
+        up, low = poc_idx, poc_idx
         while curr_v < target_v:
             v_u = vol_bin[up+1] if up < bins_count-1 else 0
             v_d = vol_bin[low-1] if low > 0 else 0
@@ -176,7 +186,11 @@ def calculate_data(ticker):
             if v_u > v_d: up += 1; curr_v += v_u
             else: low -= 1; curr_v += v_d
                 
-        val_price, vah_price, poc_price = bins[low], bins[up], bins[poc_idx]
+        val_price = bin_mids[low]
+        vah_price = bin_mids[up]
+        
+        # 為了畫圖需要 bin_indices
+        bin_indices = np.digitize(p_slice, bins) - 1
 
         dist_pct_poc = ((current_price - poc_price) / current_price) * 100
         dist_pct_val = ((current_price - val_price) / current_price) * 100 
@@ -210,7 +224,7 @@ def calculate_data(ticker):
                 status_html += f"1. 若剛<b>跌破 POC</b>: <span class='red'>應已離場 (獲利了結)</span><br>"
                 status_html += f"2. 若從<b>底部上來</b>: <span class='green'>續抱 (目標 POC)</span>"
 
-        chart_base64 = generate_chart(df_hourly, df_slice, sma200, poc_price, val_price, vah_price, bins, vol_bin, np.arange(bins_count))
+        chart_base64 = generate_chart(df_daily, df_slice, sma200, poc_price, val_price, vah_price, bin_mids, vol_bin, bin_indices)
 
         return {
             'name': ticker_names[ticker], 'ticker': ticker, 'price': current_price,
@@ -263,12 +277,13 @@ else:
 day_of_month = datetime.datetime.now().day
 if day_of_month <= 5:
     m_class = "m-alert"
-    m_msg = f"⚠️ <b>月初健檢時間！</b>請執行 <code>check_overfitting.py</code> 再次確認 69/37/0.70 的穩定性。"
+    m_msg = f"⚠️ <b>月初健檢時間！</b>請執行 <code>check_overfitting.py</code> 確認參數穩定性。"
 else:
     m_class = "m-normal"
     m_msg = "參數魯棒性監測：建議每月 1~5 號執行一次全域掃描。"
 
 final_html = html_template.format(
+    lookback=lookback_days, bins=bins_count, va=va_pct,
     update_time=datetime.datetime.now(ZoneInfo("America/New_York")).strftime('%Y-%m-%d %H:%M'), 
     content=f"{cards_html}<div class='verdict'><div class='verdict-title {v_cls}'>{v_title}</div><div style='margin-left: 20px;'>{v_msg}</div></div>",
     m_class=m_class,
@@ -278,4 +293,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("Dashboard Updated to Robust Version (69/37/0.70)!")
+print("✅ Main Dashboard Updated to Plateau Champion (55/21/0.51)!")

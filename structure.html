@@ -1,0 +1,346 @@
+
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Market Structure (Table)</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            body { background-color: #0d1117; color: #c9d1d9; font-family: 'Microsoft JhengHei', 'Consolas', sans-serif; padding: 20px; margin:0; }
+            
+            .nav { display: flex; border-bottom: 1px solid #30363d; margin-bottom: 20px; }
+            .nav-item { padding: 10px 20px; text-decoration: none; color: #8b949e; font-weight: bold; }
+            .nav-item:hover { color: #c9d1d9; background-color: #161b22; }
+            .nav-item.active { color: #58a6ff; border-bottom: 2px solid #58a6ff; }
+            
+            .section-title { border-left: 4px solid #58a6ff; padding-left: 10px; margin: 30px 0 10px 0; font-size: 1.2em; color: white; font-weight:bold; }
+            
+            .table-container { overflow-x: auto; background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; }
+            table { width: 100%; border-collapse: collapse; min-width: 350px; }
+            th { background-color: #21262d; color: #8b949e; padding: 12px; font-size: 0.9em; text-align: right; }
+            td { padding: 12px; border-bottom: 1px solid #30363d; text-align: right; font-family: 'Consolas', monospace; }
+            tr:last-child td { border-bottom: none; }
+            
+            th:first-child, td:first-child { text-align: left; }
+            
+            .ticker-code { font-size: 0.8em; color: #8b949e; }
+            .col-name { font-family: 'Microsoft JhengHei', sans-serif; }
+            .col-price { color: #f0f6fc; font-weight: bold; }
+
+            .green { color: #3fb950; }
+            .red { color: #ff7b72; }
+            .gray { color: #8b949e; }
+            
+            @media (max-width: 600px) {
+                .mobile-hide { display: none; }
+                body { padding: 10px; }
+                th, td { padding: 10px 5px; font-size: 0.9em; }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="nav">
+            <a href="index.html" class="nav-item">🚀 策略訊號 (Signals)</a>
+            <a href="structure.html" class="nav-item active">🏗️ 市場結構 (Structure)</a>
+        </div>
+
+        <div class="update-time" style="text-align:right; color:#8b949e; font-size:0.8em; margin-bottom:10px;">
+            更新時間: 2026-01-25 04:45
+        </div>
+
+        
+    <div class="section-title">1. 宏觀風險 (Macro)</div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th style="text-align:left;">名稱</th>
+                    <th>現價</th>
+                    <th>1日 %</th>
+                    <th class="mobile-hide">1週 %</th>
+                    <th class="mobile-hide">1月 %</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">恐慌指數 (VIX)</div>
+                <div class="ticker-code">^VIX</div>
+            </td>
+            <td class="col-price">16.09</td>
+            <td class="red">+2.88%</td>
+            <td class="red mobile-hide">+1.58%</td>
+            <td class="red mobile-hide">+7.91%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">10年美債 (US10Y)</div>
+                <div class="ticker-code">^TNX</div>
+            </td>
+            <td class="col-price">4.24</td>
+            <td class="green">-0.24%</td>
+            <td class="red mobile-hide">+1.90%</td>
+            <td class="red mobile-hide">+2.12%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">美元指數 (DXY)</div>
+                <div class="ticker-code">DX-Y.NYB</div>
+            </td>
+            <td class="col-price">97.46</td>
+            <td class="green">-0.92%</td>
+            <td class="green mobile-hide">-1.88%</td>
+            <td class="green mobile-hide">-1.16%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">比特幣 (BTC)</div>
+                <div class="ticker-code">BTC-USD</div>
+            </td>
+            <td class="col-price">88328.70</td>
+            <td class="red">-0.88%</td>
+            <td class="green mobile-hide">+0.02%</td>
+            <td class="red mobile-hide">-2.51%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">黃金 (Gold)</div>
+                <div class="ticker-code">GC=F</div>
+            </td>
+            <td class="col-price">4979.70</td>
+            <td class="green">+1.44%</td>
+            <td class="green mobile-hide">+7.87%</td>
+            <td class="green mobile-hide">+14.18%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">原油 (Oil)</div>
+                <div class="ticker-code">CL=F</div>
+            </td>
+            <td class="col-price">61.07</td>
+            <td class="green">+2.88%</td>
+            <td class="green mobile-hide">+3.18%</td>
+            <td class="green mobile-hide">+7.78%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">20年公債 (TLT)</div>
+                <div class="ticker-code">TLT</div>
+            </td>
+            <td class="col-price">87.93</td>
+            <td class="green">+0.27%</td>
+            <td class="red mobile-hide">-0.43%</td>
+            <td class="green mobile-hide">+0.43%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">高收益債 (HYG)</div>
+                <div class="ticker-code">HYG</div>
+            </td>
+            <td class="col-price">81.14</td>
+            <td class="red">-0.05%</td>
+            <td class="green mobile-hide">+0.12%</td>
+            <td class="green mobile-hide">+0.97%</td>
+        </tr>
+        
+            </tbody>
+        </table>
+    </div>
+    
+        
+    <div class="section-title">2. 板塊輪動 (Sectors)</div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th style="text-align:left;">名稱</th>
+                    <th>現價</th>
+                    <th>1日 %</th>
+                    <th class="mobile-hide">1週 %</th>
+                    <th class="mobile-hide">1月 %</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">原物料 (Material)</div>
+                <div class="ticker-code">XLB</div>
+            </td>
+            <td class="col-price">49.97</td>
+            <td class="green">+0.91%</td>
+            <td class="green mobile-hide">+2.06%</td>
+            <td class="green mobile-hide">+10.71%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">必消 (Staples)</div>
+                <div class="ticker-code">XLP</div>
+            </td>
+            <td class="col-price">82.91</td>
+            <td class="green">+0.78%</td>
+            <td class="green mobile-hide">+0.66%</td>
+            <td class="green mobile-hide">+6.09%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">通訊 (Comm.)</div>
+                <div class="ticker-code">XLC</div>
+            </td>
+            <td class="col-price">116.96</td>
+            <td class="green">+0.61%</td>
+            <td class="green mobile-hide">+0.65%</td>
+            <td class="green mobile-hide">+0.70%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">能源 (Energy)</div>
+                <div class="ticker-code">XLE</div>
+            </td>
+            <td class="col-price">49.19</td>
+            <td class="green">+0.57%</td>
+            <td class="green mobile-hide">+3.32%</td>
+            <td class="green mobile-hide">+12.42%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">非必消 (Discret.)</div>
+                <div class="ticker-code">XLY</div>
+            </td>
+            <td class="col-price">123.13</td>
+            <td class="green">+0.42%</td>
+            <td class="green mobile-hide">+0.35%</td>
+            <td class="green mobile-hide">+1.25%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">科技 (Tech)</div>
+                <div class="ticker-code">XLK</div>
+            </td>
+            <td class="col-price">145.09</td>
+            <td class="green">+0.14%</td>
+            <td class="red mobile-hide">-0.25%</td>
+            <td class="green mobile-hide">+0.49%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">公用 (Utilities)</div>
+                <div class="ticker-code">XLU</div>
+            </td>
+            <td class="col-price">42.56</td>
+            <td class="red">-0.35%</td>
+            <td class="red mobile-hide">-2.41%</td>
+            <td class="green mobile-hide">+0.58%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">醫療 (Health)</div>
+                <div class="ticker-code">XLV</div>
+            </td>
+            <td class="col-price">157.48</td>
+            <td class="red">-0.51%</td>
+            <td class="green mobile-hide">+0.33%</td>
+            <td class="green mobile-hide">+2.07%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">半導體 (Semis)</div>
+                <div class="ticker-code">SMH</div>
+            </td>
+            <td class="col-price">400.09</td>
+            <td class="red">-0.68%</td>
+            <td class="green mobile-hide">+0.93%</td>
+            <td class="green mobile-hide">+12.66%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">工業 (Indust.)</div>
+                <div class="ticker-code">XLI</div>
+            </td>
+            <td class="col-price">164.22</td>
+            <td class="red">-0.77%</td>
+            <td class="red mobile-hide">-0.94%</td>
+            <td class="green mobile-hide">+5.72%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">金融 (Financial)</div>
+                <div class="ticker-code">XLF</div>
+            </td>
+            <td class="col-price">53.07</td>
+            <td class="red">-1.38%</td>
+            <td class="red mobile-hide">-2.39%</td>
+            <td class="red mobile-hide">-2.89%</td>
+        </tr>
+        
+            </tbody>
+        </table>
+    </div>
+    
+        
+    <div class="section-title">3. 市場廣度 (Breadth)</div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th style="text-align:left;">名稱</th>
+                    <th>現價</th>
+                    <th>1日 %</th>
+                    <th class="mobile-hide">1週 %</th>
+                    <th class="mobile-hide">1月 %</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">標普市值 (SPY)</div>
+                <div class="ticker-code">SPY</div>
+            </td>
+            <td class="col-price">689.23</td>
+            <td class="green">+0.04%</td>
+            <td class="red mobile-hide">-0.43%</td>
+            <td class="green mobile-hide">+1.27%</td>
+        </tr>
+        
+        <tr>
+            <td class="col-name">
+                <div style="font-weight:bold;">標普等權 (RSP)</div>
+                <div class="ticker-code">RSP</div>
+            </td>
+            <td class="col-price">198.77</td>
+            <td class="red">-0.45%</td>
+            <td class="red mobile-hide">-0.40%</td>
+            <td class="green mobile-hide">+3.46%</td>
+        </tr>
+        
+            </tbody>
+        </table>
+    </div>
+    
+        
+    <div style="margin-top:20px; padding:15px; background:#161b22; border-left: 4px solid #ff7b72; color:#c9d1d9;">
+        <strong>市場廣度診斷：</strong> 🔴 虛弱：僅靠權值股 (SPY) 拉抬，中小股在跌
+    </div>
+    
+
+    </body>
+    </html>
+    
