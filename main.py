@@ -17,7 +17,7 @@ import base64
 plt.rcParams['axes.unicode_minus'] = False 
 
 # ==========================================
-# 1. 策略參數 (Plateau Edition)
+# 1. 策略參數 (Ultimate Champion)
 # ==========================================
 target_tickers = ['SPY', 'QQQ', 'IWM']
 ticker_names = {
@@ -26,12 +26,12 @@ ticker_names = {
     'IWM': '羅素2000 (IWM)'
 }
 
-# --- 核心參數：基於 2006-2026 精細掃描 ---
-# 冠軍數據：ROI +1223% (Plateau Score 最高)
-# 參數特性：位於 Bins 21 的黃金山脈中心，容錯率極高。
-lookback_days = 55    # 🛡️ 高原中心 (Stable Center)
-bins_count = 21       # 🛡️ 黃金解析度 (Golden Bins)
-va_pct = 0.51         # 🛡️ 核心價值 (Core Value)
+# --- 核心參數：基於 High/Low 全範圍真實掃描結果 ---
+# 冠軍數據：ROI +1055.1% | MaxDD -22.1% (風險極低)
+# 特性：Lookback 77 (3.5個月) 過濾雜訊，VA 0.78 適應全範圍稀釋，Bins 32 提供足夠解析度。
+lookback_days = 77    # 🛡️ 穩健長週期 (Quarterly+)
+bins_count = 32       # 🛡️ 精細解析度 (High Res)
+va_pct = 0.78         # 🛡️ 標準價值區 (Standard Value)
 
 # 繪圖風格
 plt.style.use('dark_background')
@@ -51,6 +51,7 @@ html_template = """
         
         .nav {{ display: flex; border-bottom: 1px solid #30363d; margin-bottom: 20px; }}
         .nav-item {{ padding: 10px 20px; text-decoration: none; color: #8b949e; font-weight: bold; }}
+        .nav-item:hover {{ color: #c9d1d9; background-color: #161b22; }}
         .nav-item.active {{ color: #58a6ff; border-bottom: 2px solid #58a6ff; }}
 
         .card {{ background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 15px; margin-bottom: 20px; }}
@@ -86,7 +87,7 @@ html_template = """
 
     <div class="update-time">最後更新 (美東時間): {update_time}</div>
     <div style="text-align: center; margin-bottom: 20px; font-size: 0.9em; color: #8b949e;">
-        策略核心：全日線邏輯 (Daily Logic) | 參數: LB {lookback} / Bins {bins} / VA {va}
+        策略核心：High/Low 全範圍邏輯 (Real Logic) | 參數: LB {lookback} / Bins {bins} / VA {va}
     </div>
     
     {content}
@@ -101,9 +102,9 @@ html_template = """
 """
 
 # ==========================================
-# 3. 繪圖函數 (Daily Candles)
+# 3. 繪圖函數 (修正版 - 對齊 High/Low)
 # ==========================================
-def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, vah_price, price_bins, vol_by_bin, bin_indices):
+def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, vah_price, price_bins, vol_by_bin):
     fig = plt.figure(figsize=(10, 6), facecolor='#161b22')
     gs = fig.add_gridspec(1, 2,  width_ratios=(3, 1), left=0.05, right=0.95, wspace=0.05)
     ax1 = fig.add_subplot(gs[0])
@@ -126,11 +127,17 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     ax1.set_ylabel("Price")
     ax1.legend(fontsize='small', facecolor='#161b22', edgecolor='#30363d')
 
-    # Volume Profile
-    is_in_va = (bin_indices >= bin_indices[price_bins == val_price][0]) & (bin_indices <= bin_indices[price_bins == vah_price][0])
-    colors = np.where(is_in_va, '#58a6ff', '#30363d')
-    poc_bin_idx = np.argmax(vol_by_bin)
-    colors[poc_bin_idx] = '#d29922' 
+    # Volume Profile Coloring (根據價格區間上色)
+    colors = []
+    for p in price_bins:
+        if val_price <= p <= vah_price:
+            colors.append('#58a6ff') # Value Area 內 (藍色)
+        else:
+            colors.append('#30363d') # Value Area 外 (深灰)
+            
+    # 特別標註 POC (金色)
+    poc_idx = np.argmax(vol_by_bin)
+    colors[poc_idx] = '#d29922' 
 
     ax2.barh(price_bins, vol_by_bin, height=(price_bins[1]-price_bins[0])*0.8, align='center', color=colors, alpha=0.8)
     ax2.axis('off') 
@@ -143,11 +150,11 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     return img_base64
 
 # ==========================================
-# 4. 核心運算 (Daily Logic)
+# 4. 核心運算 (High/Low Range Real Logic)
 # ==========================================
 def calculate_data(ticker):
     try:
-        # 1. 取得日線數據 (3年, 確保足夠數據)
+        # 1. 取得日線數據
         df_daily = yf.download(ticker, period="3y", interval="1d", progress=False)
         if isinstance(df_daily.columns, pd.MultiIndex): df_daily.columns = df_daily.columns.get_level_values(0)
         
@@ -156,26 +163,28 @@ def calculate_data(ticker):
         current_price = df_daily['Close'].iloc[-1]
         is_bull_market = current_price > sma200
         
-        # 2. 切割數據 (只取最後 lookback_days 天)
+        # 2. 切割數據
         df_slice = df_daily.iloc[-lookback_days:].copy()
         
-        # 3. 計算 Volume Profile (Daily Approximation)
-        # 使用 Typical Price = (H+L+C)/3
+        # 3. 計算 Volume Profile (全範圍邏輯)
         p_slice = (df_slice['High'] + df_slice['Low'] + df_slice['Close']) / 3
         v_slice = df_slice['Volume']
         
-        min_p, max_p = p_slice.min(), p_slice.max()
-        bins = np.linspace(min_p, max_p, bins_count)
+        # --- 關鍵一致性：使用 High/Low 定義 Histogram 邊界 ---
+        range_min = df_slice['Low'].min()
+        range_max = df_slice['High'].max()
         
-        # 使用 numpy histogram 加速並保持邏輯一致
-        vol_bin, bin_edges = np.histogram(p_slice, bins=bins_count, weights=v_slice)
+        vol_bin, bin_edges = np.histogram(
+            p_slice, 
+            bins=bins_count, 
+            range=(range_min, range_max), # ✅ 強制對齊 High/Low
+            weights=v_slice
+        )
         
-        # 找 POC (使用 bin 中點)
         poc_idx = np.argmax(vol_bin)
         bin_mids = (bin_edges[:-1] + bin_edges[1:]) / 2
         poc_price = bin_mids[poc_idx]
         
-        # 找 VAL
         target_v = vol_bin.sum() * va_pct
         curr_v = vol_bin[poc_idx]
         up, low = poc_idx, poc_idx
@@ -189,9 +198,6 @@ def calculate_data(ticker):
         val_price = bin_mids[low]
         vah_price = bin_mids[up]
         
-        # 為了畫圖需要 bin_indices
-        bin_indices = np.digitize(p_slice, bins) - 1
-
         dist_pct_poc = ((current_price - poc_price) / current_price) * 100
         dist_pct_val = ((current_price - val_price) / current_price) * 100 
         
@@ -224,7 +230,7 @@ def calculate_data(ticker):
                 status_html += f"1. 若剛<b>跌破 POC</b>: <span class='red'>應已離場 (獲利了結)</span><br>"
                 status_html += f"2. 若從<b>底部上來</b>: <span class='green'>續抱 (目標 POC)</span>"
 
-        chart_base64 = generate_chart(df_daily, df_slice, sma200, poc_price, val_price, vah_price, bin_mids, vol_bin, bin_indices)
+        chart_base64 = generate_chart(df_daily, df_slice, sma200, poc_price, val_price, vah_price, bin_mids, vol_bin)
 
         return {
             'name': ticker_names[ticker], 'ticker': ticker, 'price': current_price,
@@ -293,4 +299,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("✅ Main Dashboard Updated to Plateau Champion (55/21/0.51)!")
+print("✅ Main Dashboard Updated to Ultimate Champion (77/32/0.78)!")
