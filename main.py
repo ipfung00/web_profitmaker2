@@ -17,7 +17,7 @@ import base64
 plt.rcParams['axes.unicode_minus'] = False 
 
 # ==========================================
-# 1. 策略參數 (Ultimate Champion)
+# 1. 策略參數 (Quality King Edition)
 # ==========================================
 target_tickers = ['SPY', 'QQQ', 'IWM']
 ticker_names = {
@@ -26,12 +26,12 @@ ticker_names = {
     'IWM': '羅素2000 (IWM)'
 }
 
-# --- 核心參數：基於 High/Low 全範圍真實掃描結果 ---
-# 冠軍數據：ROI +1055.1% | MaxDD -22.1% (風險極低)
-# 特性：Lookback 77 (3.5個月) 過濾雜訊，VA 0.78 適應全範圍稀釋，Bins 32 提供足夠解析度。
-lookback_days = 77    # 🛡️ 穩健長週期 (Quarterly+)
-bins_count = 32       # 🛡️ 精細解析度 (High Res)
-va_pct = 0.78         # 🛡️ 標準價值區 (Standard Value)
+# --- 核心參數：基於 Ultimate Quality Scan ---
+# 👑 品質王者數據：ROI +744.6% | MaxDD -17.5% | CV 8.03% (極度穩健)
+# 特性：Bins 12 (低解析度) 過濾所有微觀雜訊，只抓宏觀大支撐，容錯率極高。
+lookback_days = 71    # 🛡️ 穩健週期 (約3.5個月)
+bins_count = 12       # 🛡️ 粗顆粒解析度 (Macro Structure)
+va_pct = 0.80         # 🛡️ 寬價值區 (Broad Value)
 
 # 繪圖風格
 plt.style.use('dark_background')
@@ -87,7 +87,7 @@ html_template = """
 
     <div class="update-time">最後更新 (美東時間): {update_time}</div>
     <div style="text-align: center; margin-bottom: 20px; font-size: 0.9em; color: #8b949e;">
-        策略核心：High/Low 全範圍邏輯 (Real Logic) | 參數: LB {lookback} / Bins {bins} / VA {va}
+        策略核心：High/Low 全範圍邏輯 (Quality King) | 參數: LB {lookback} / Bins {bins} / VA {va}
     </div>
     
     {content}
@@ -127,7 +127,7 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     ax1.set_ylabel("Price")
     ax1.legend(fontsize='small', facecolor='#161b22', edgecolor='#30363d')
 
-    # Volume Profile Coloring (根據價格區間上色)
+    # Volume Profile Coloring
     colors = []
     for p in price_bins:
         if val_price <= p <= vah_price:
@@ -299,4 +299,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("✅ Main Dashboard Updated to Ultimate Champion (77/32/0.78)!")
+print("✅ Main Dashboard Updated to Quality King (71/12/0.80)!")
