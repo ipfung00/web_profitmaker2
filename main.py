@@ -17,7 +17,7 @@ import base64
 plt.rcParams['axes.unicode_minus'] = False 
 
 # ==========================================
-# 1. 策略參數 (Final Gold Edition)
+# 1. 策略參數 (Final Gold: Panic 2.0 Edition)
 # ==========================================
 target_tickers = ['SPY', 'QQQ', 'IWM']
 ticker_names = {
@@ -26,13 +26,13 @@ ticker_names = {
     'IWM': '羅素2000 (IWM)'
 }
 
-# --- 核心參數：基於 Deep Optimized Scan (ROI 1505%) ---
-# 👑 最終黃金參數：ROI +1505.9% | MaxDD -24.2% | CV 17.17%
-# 邏輯：LB 98 (約5個月趨勢) + Bins 7 (七重天宏觀) + VA 0.80 (標準價值) + ATR 2.7 (靈敏止盈)
-lookback_days = 98    # 🛡️ 中長線趨勢 (約20週)
-bins_count = 7        # 🛡️ 極致宏觀濾網
-va_pct = 0.80         # 🛡️ 標準價值區
-atr_mult = 2.7        # 🚀 靈敏移動止盈 (比3.0更快鎖利)
+# 👑 最終黃金參數 (經過 4D 掃描 + 5D 微調 + 穩定性驗證)
+# ROI: ~1607% | MaxDD: -24% | CV: ~17% (Robust)
+lookback_days = 98      # 🛡️ 20週趨勢 (約5個月)
+bins_count = 7          # 🛡️ 七重天宏觀濾網 (過濾雜訊)
+va_pct = 0.80           # 🛡️ 標準價值區 (80%成交量)
+atr_mult = 2.7          # 🚀 靈敏移動止盈 (鎖利關鍵)
+panic_mult = 2.0        # 🧪 恐慌濾網最佳甜蜜點 (平衡防禦與進攻)
 
 # 繪圖風格
 plt.style.use('dark_background')
@@ -63,6 +63,7 @@ html_template = """
         .yellow {{ color: #d29922; }}
         .cyan {{ color: #58a6ff; }}
         .gray {{ color: #8b949e; }}
+        .purple {{ color: #a371f7; }}
         
         .bold {{ font-weight: bold; }}
         .row {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
@@ -88,7 +89,7 @@ html_template = """
 
     <div class="update-time">最後更新 (美東時間): {update_time}</div>
     <div style="text-align: center; margin-bottom: 20px; font-size: 0.9em; color: #8b949e;">
-        策略核心：Final Gold Edition (ATR Exit) | 參數: LB {lookback} / ATR {atr}x / VA {va}
+        策略核心：Final Gold (Panic 2.0) | 參數: LB {lookback} / ATR {atr}x / Panic {panic}x
     </div>
     
     {content}
@@ -103,7 +104,7 @@ html_template = """
 """
 
 # ==========================================
-# 3. 繪圖函數 (修正版 - 對齊 High/Low)
+# 3. 繪圖函數
 # ==========================================
 def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, vah_price, price_bins, vol_by_bin, stop_price):
     fig = plt.figure(figsize=(10, 6), facecolor='#161b22')
@@ -154,7 +155,7 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     return img_base64
 
 # ==========================================
-# 4. 核心運算 (Profit Booster Logic)
+# 4. 核心運算
 # ==========================================
 def calculate_data(ticker):
     try:
@@ -171,6 +172,9 @@ def calculate_data(ticker):
                         (df_daily['High']-prev_close).abs(), 
                         (df_daily['Low']-prev_close).abs()], axis=1).max(axis=1)
         atr = tr.rolling(window=14).mean().iloc[-1]
+        
+        # 恐慌指數 (Panic Filter 2.0)
+        is_panic = (df_daily['High'].iloc[-1] - df_daily['Low'].iloc[-1]) > (panic_mult * atr)
         
         current_price = df_daily['Close'].iloc[-1]
         is_bull_market = current_price > sma200
@@ -225,15 +229,20 @@ def calculate_data(ticker):
             color_class = "red"
             action_html = "▼ 清倉離場 (Bear Market)"
             status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200:.2f})。"
+        elif is_panic:
+            signal_code = 0
+            color_class = "yellow"
+            action_html = "⚠️ 恐慌觀望 (High Volatility)"
+            status_html = f"今日震幅 ({df_daily['High'].iloc[-1]-df_daily['Low'].iloc[-1]:.2f}) > {panic_mult}x ATR。"
         else:
-            # Entry Logic (VP)
+            # Entry Logic
             if current_price < val_price:
                 signal_code = 1
                 color_class = "green"
                 action_html = "★ 強力抄底 (Dip Buy)"
                 status_html = "價格回調至 VAL，勝率最高點。"
             elif current_price > poc_price:
-                # Exit Logic (ATR) - Check if stop hit
+                # Exit Logic (ATR)
                 if current_price < stop_price:
                      signal_code = -2
                      color_class = "red"
@@ -243,7 +252,7 @@ def calculate_data(ticker):
                     signal_code = 2
                     color_class = "cyan"
                     action_html = "▲ 續抱/追勢 (Let Run)"
-                    status_html = f"價格在 ATR 止盈線之上。<br>安全距離 {dist_pct_stop:.1f}%，讓獲利奔跑。"
+                    status_html = f"價格在 ATR 止盈線之上。<br>安全距離 {dist_pct_stop:.1f}%，建議 2x 槓桿。"
             else:
                 signal_code = 0
                 color_class = "yellow"
@@ -298,20 +307,20 @@ elif s_qqq == -2:
 elif s_qqq == 1:
     v_title, v_cls, v_msg = "🎯 絕佳買點", "green", "回測 VAL 支撐，進場抄底。"
 elif s_qqq == 2:
-    v_title, v_cls, v_msg = "🚀 趨勢續抱", "cyan", "未破 ATR 止盈線，持續持有。"
+    v_title, v_cls, v_msg = "🚀 趨勢續抱 (2x Leverage)", "purple", "建議持有 QLD (2x QQQ)。"
 else:
     v_title, v_cls, v_msg = "⚖️ 震盪觀察", "yellow", "區間震盪，等待方向。"
 
 day_of_month = datetime.datetime.now().day
 if day_of_month <= 5:
     m_class = "m-alert"
-    m_msg = f"⚠️ <b>月初健檢！</b>請執行 <code>scan_4d_deep.py</code> 確認參數。"
+    m_msg = f"⚠️ <b>月初健檢！</b>請執行 <code>scan_5d_quarterly.py</code> 確認參數。"
 else:
     m_class = "m-normal"
-    m_msg = "Final Gold 模式：LB 98 / Bins 7 / VA 0.80 / ATR 2.7。"
+    m_msg = "Final Gold 模式：LB 98 / Bins 7 / VA 0.80 / ATR 2.7 / Panic 2.0。"
 
 final_html = html_template.format(
-    lookback=lookback_days, bins=bins_count, va=va_pct, atr=atr_mult,
+    lookback=lookback_days, bins=bins_count, va=va_pct, atr=atr_mult, panic=panic_mult,
     update_time=datetime.datetime.now(ZoneInfo("America/New_York")).strftime('%Y-%m-%d %H:%M'), 
     content=f"{cards_html}<div class='verdict'><div class='verdict-title {v_cls}'>{v_title}</div><div style='margin-left: 20px;'>{v_msg}</div></div>",
     m_class=m_class,
@@ -321,4 +330,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("✅ Main Dashboard Updated to Final Gold Edition (98/7/0.80/ATR 2.7)!")
+print("✅ Main Dashboard Updated to Final Gold (Panic 2.0) Edition!")
