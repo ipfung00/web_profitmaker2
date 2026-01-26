@@ -5,7 +5,7 @@ import datetime
 from zoneinfo import ZoneInfo
 import os
 import matplotlib
-matplotlib.use('Agg') # 設定後端為非互動模式，防止伺服器報錯
+matplotlib.use('Agg') # 設定後端為非互動模式
 import matplotlib.pyplot as plt
 import mplfinance as mpf
 import io
@@ -26,19 +26,21 @@ ticker_names = {
     'IWM': '羅素2000 (IWM)'
 }
 
-# 👑 核心參數 (Core Parameters)
-# 經過 2D 掃描確認為全域最佳解高原區
+# 👑 核心參數
 lookback_days = 98      
 bins_count = 7          
 va_pct = 0.80           
 atr_mult = 2.7          
 panic_mult = 2.0        
 
-# 🔫 狙擊手參數 (Sniper Parameters)
-# 經過深海掃描與彈道分析驗證
+# 🔫 狙擊手參數
 sniper_rsi_threshold = 30
 sniper_bias_threshold = -0.11  # -11%
-sniper_stop_lookback = 10      # 狙擊單專用：短期 10 日高點止損
+sniper_stop_lookback = 10      # 短期止損
+
+# 🎨 UI 顏色設定
+COLOR_ATR_STOP = '#e5534b'    # 紅色 (長線止盈)
+COLOR_SNIPER_STOP = '#ff79c6' # 亮粉色 (短線止損) - 改這裡區分顏色
 
 # 繪圖風格
 plt.style.use('dark_background')
@@ -85,6 +87,7 @@ html_template = """
         
         .maintenance-box {{ margin-top: 40px; padding: 15px; border-top: 1px solid #30363d; font-size: 0.9em; text-align: center; }}
         .m-alert {{ color: #ff7b72; border: 1px solid #ff7b72; padding: 10px; border-radius: 6px; background-color: rgba(255, 123, 114, 0.1); font-weight: bold; }}
+        .m-warning {{ color: #d29922; border: 1px solid #d29922; padding: 10px; border-radius: 6px; background-color: rgba(210, 153, 34, 0.1); font-weight: bold; }}
         .m-normal {{ color: #8b949e; border: 1px dashed #30363d; padding: 10px; border-radius: 6px; }}
     </style>
 </head>
@@ -111,7 +114,7 @@ html_template = """
 """
 
 # ==========================================
-# 3. 輔助函數 (RSI & Chart)
+# 3. 輔助函數
 # ==========================================
 def calculate_rsi(data, window=14):
     delta = data.diff()
@@ -131,13 +134,13 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     if not np.isnan(sma200_val):
          ax1.axhline(y=sma200_val, color='gray', linestyle='--', linewidth=1, label='SMA200', alpha=0.7)
 
-    # 繪製標準 ATR 止盈線
+    # 繪製標準 ATR 止盈線 (紅色)
     if stop_price > 0:
-        ax1.axhline(y=stop_price, color='#e5534b', linewidth=1.5, linestyle='-', label=f'ATR Stop ({atr_mult}x)', alpha=0.9)
+        ax1.axhline(y=stop_price, color=COLOR_ATR_STOP, linewidth=1.5, linestyle='-', label=f'ATR Stop ({atr_mult}x)', alpha=0.9)
     
-    # 繪製狙擊手止損線 (虛線)
+    # 繪製狙擊手止損線 (亮粉色)
     if sniper_stop > 0:
-        ax1.axhline(y=sniper_stop, color='#f0883e', linewidth=1.5, linestyle=':', label=f'Sniper Stop ({atr_mult}x)', alpha=0.9)
+        ax1.axhline(y=sniper_stop, color=COLOR_SNIPER_STOP, linewidth=1.5, linestyle=':', label=f'Sniper Stop ({atr_mult}x)', alpha=0.9)
 
     ax1.axhline(y=poc_price, color='#d29922', linewidth=1.5, linestyle=':', label='POC (Entry Only)', alpha=0.8)
     ax1.axhline(y=val_price, color='#3fb950', linewidth=1, linestyle='--', label='VAL (Entry Only)', alpha=0.8)
@@ -184,7 +187,7 @@ def calculate_data(ticker):
         atr = tr.rolling(window=14).mean().iloc[-1]
         is_panic = (df_daily['High'].iloc[-1] - df_daily['Low'].iloc[-1]) > (panic_mult * atr)
         
-        # 計算 RSI & Bias (狙擊手)
+        # 計算 RSI & Bias
         rsi_series = calculate_rsi(df_daily['Close'])
         rsi = rsi_series.iloc[-1]
         bias = (df_daily['Close'].iloc[-1] - sma200) / sma200
@@ -193,7 +196,7 @@ def calculate_data(ticker):
         is_bull_market = current_price > sma200
         is_sniper_zone = (rsi < sniper_rsi_threshold) and (bias < sniper_bias_threshold)
         
-        # 切割數據 (VP用)
+        # 切割數據
         df_slice = df_daily.iloc[-lookback_days:].copy()
         p_slice = (df_slice['High'] + df_slice['Low'] + df_slice['Close']) / 3
         v_slice = df_slice['Volume']
@@ -219,30 +222,23 @@ def calculate_data(ticker):
         vah_price = bin_mids[up]
         
         # 止盈線計算
-        # 1. 標準 ATR 止盈 (基於 LB 週期高點)
         recent_highest_close = df_slice['Close'].max()
         stop_price = recent_highest_close - (atr_mult * atr)
         
-        # 2. 狙擊手專用止盈 (基於短期 10 日高點)
-        # 用於判斷：如果我是用狙擊模式進場的，短期止損在哪？
         short_term_high = df_daily['Close'].iloc[-sniper_stop_lookback:].max()
         sniper_stop = short_term_high - (atr_mult * atr)
         
         signal_code = 0
         action_html, status_html, color_class = "", "", ""
         
-        # --- 決策樹 (Logic Tree) ---
-        
-        # 1. 優先檢查：狙擊手模式 (Sniper)
+        # --- 決策樹 ---
         if is_sniper_zone:
             signal_code = 3
             color_class = "orange"
             action_html = "🔫 狙擊手進場 (Sniper Buy)"
             status_html = f"RSI({rsi:.1f})<30 且 乖離({bias*100:.1f}%)<-11%。<br>建議投入 30% 資金。"
-        
-        # 2. 檢查：熊市 (Bear Market)
         elif not is_bull_market:
-            # 特例：如果是熊市反彈 (持有的狙擊單，價格在短期止損之上)
+            # 特例：狙擊單續抱
             if current_price > sniper_stop:
                 signal_code = -3
                 color_class = "orange"
@@ -253,15 +249,11 @@ def calculate_data(ticker):
                 color_class = "red"
                 action_html = "▼ 清倉離場 (Bear Market)"
                 status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200:.2f})。"
-        
-        # 3. 檢查：恐慌濾網 (Panic)
         elif is_panic:
             signal_code = 0
             color_class = "yellow"
             action_html = "⚠️ 恐慌觀望 (High Volatility)"
             status_html = f"今日震幅 ({df_daily['High'].iloc[-1]-df_daily['Low'].iloc[-1]:.2f}) > {panic_mult}x ATR。"
-            
-        # 4. 標準牛市 VP 策略 (Standard)
         else:
             if current_price < val_price:
                 signal_code = 1
@@ -309,13 +301,13 @@ for ticker in target_tickers:
         market_signals[ticker] = res['signal_code']
         header = f'<div class="header {res["color_class"]}"><span>{res["name"]}</span><span class="tag {res["color_class"]}" style="border-color: currentColor;">{res["ticker"]}</span></div>'
         
-        # 顯示兩條止損線 (方便狙擊手參考)
+        # UI 優化：將 Sniper 止損顏色改為亮粉色
         cards_html += f"""
         <div class="card">
             {header}
             <div class="row"><span>現價:</span> <span>{res['price']:.2f}</span></div>
-            <div class="row"><span>ATR 止盈 (長線):</span> <span style="color:#e5534b">{res['stop_price']:.2f}</span></div>
-            <div class="row"><span>Sniper 止損 (短線):</span> <span style="color:#f0883e">{res['sniper_stop']:.2f}</span></div>
+            <div class="row"><span>ATR 止盈 (長線):</span> <span style="color:{COLOR_ATR_STOP}">{res['stop_price']:.2f}</span></div>
+            <div class="row"><span>Sniper 止損 (短線):</span> <span style="color:{COLOR_SNIPER_STOP}">{res['sniper_stop']:.2f}</span></div>
             <div class="row"><span>POC (買點):</span> <span style="color:#d29922">{res['poc']:.2f}</span></div>
             <div class="row"><span>VAL (抄底):</span> <span style="color:#3fb950">{res['val']:.2f}</span></div>
             <div class="row"><span>SMA200:</span> <span style="color:gray">{res['sma200']:.2f}</span></div>
@@ -335,22 +327,34 @@ elif s_qqq == 1: v_title, v_cls, v_msg = "🎯 絕佳買點", "green", "回測 V
 elif s_qqq == 2: v_title, v_cls, v_msg = "🚀 趨勢續抱 (2x Leverage)", "purple", "建議持有 QLD (2x QQQ)。"
 else: v_title, v_cls, v_msg = "⚖️ 震盪觀察", "yellow", "區間震盪，等待方向。"
 
-# ⏰ 智能維護鬧鐘
+# ⏰ 智能維護鬧鐘 (整合年度與季度)
 now = datetime.datetime.now()
 maintenance_months = [1, 4, 7, 10]
-is_maintenance_time = (now.month in maintenance_months) and (now.day <= 7)
+is_quarterly_time = (now.month in maintenance_months) and (now.day <= 7)
+is_annual_time = (now.month == 12) # 整個 12 月都會提醒
 
-if is_maintenance_time:
+m_class = "m-normal"
+m_msg = "✅ 系統狀態正常。"
+
+if is_annual_time:
     m_class = "m-alert"
-    m_msg = f"🚨 <b>季度健檢警報！</b> 現在是 {now.month} 月初，請務必執行 <code>scan_5d_quarterly.py</code> 確認參數是否老化。"
+    m_msg = "🎯 <b>年度靶場校準警報！</b> 現在是 12 月，請務必執行 <code>monitor_market_structure.py</code> 檢查瞄準鏡是否失準。"
     print("\n" + "!"*60)
-    print(f"🚨 系統維護警報 (Quarterly Maintenance) 🚨")
-    print(f"   現在是 {now.month} 月初，請立即執行季度健檢！")
+    print(f"🚨 系統維護警報 (Annual Calibration) 🚨")
+    print(f"   現在是 12 月，請檢查市場結構！")
+    print("   👉 python monitor_market_structure.py")
+    print("!"*60 + "\n")
+elif is_quarterly_time:
+    m_class = "m-warning"
+    m_msg = f"🔧 <b>季度健檢提醒：</b> 現在是 {now.month} 月初，請執行 <code>scan_5d_quarterly.py</code> 確認核心參數。"
+    print("\n" + "!"*60)
+    print(f"🔧 系統維護提醒 (Quarterly Maintenance)")
     print("   👉 python scan_5d_quarterly.py")
     print("!"*60 + "\n")
 else:
-    m_class = "m-normal"
-    m_msg = f"✅ 系統狀態正常。下次健檢月份：{[m for m in maintenance_months if m > now.month][0] if now.month < 10 else 1} 月。"
+    next_q = [m for m in maintenance_months if m > now.month]
+    next_check = next_q[0] if next_q else 1
+    m_msg = f"✅ 系統狀態正常。<br>下季健檢：{next_check} 月 | 年度校準：12 月。"
 
 final_html = html_template.format(
     lookback=lookback_days, bins=bins_count, va=va_pct, atr=atr_mult, panic=panic_mult,
@@ -364,4 +368,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("✅ Main Dashboard Updated to Final Gold (Sniper Edition)!")
+print("✅ UI Updated: Sniper Stop color changed to Pink & Annual Timer Set.")
