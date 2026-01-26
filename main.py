@@ -26,13 +26,13 @@ ticker_names = {
     'IWM': '羅素2000 (IWM)'
 }
 
-# 👑 最終黃金參數 (經過 4D 掃描 + 5D 微調 + 穩定性驗證)
-# ROI: ~1607% | MaxDD: -24% | CV: ~17% (Robust)
-lookback_days = 98      # 🛡️ 20週趨勢 (約5個月)
-bins_count = 7          # 🛡️ 七重天宏觀濾網 (過濾雜訊)
-va_pct = 0.80           # 🛡️ 標準價值區 (80%成交量)
-atr_mult = 2.7          # 🚀 靈敏移動止盈 (鎖利關鍵)
-panic_mult = 2.0        # 🧪 恐慌濾網最佳甜蜜點 (平衡防禦與進攻)
+# 👑 最終黃金參數
+# ROI: ~1607% | MaxDD: -24% | Robustness: High
+lookback_days = 98      
+bins_count = 7          
+va_pct = 0.80           
+atr_mult = 2.7          
+panic_mult = 2.0        
 
 # 繪圖風格
 plt.style.use('dark_background')
@@ -77,8 +77,8 @@ html_template = """
         .tag {{ font-size: 0.8em; padding: 2px 6px; border-radius: 4px; border: 1px solid; }}
         
         .maintenance-box {{ margin-top: 40px; padding: 15px; border-top: 1px solid #30363d; font-size: 0.9em; text-align: center; }}
-        .m-alert {{ color: #ff7b72; border: 1px solid #ff7b72; padding: 10px; border-radius: 6px; background-color: rgba(255, 123, 114, 0.1); }}
-        .m-normal {{ color: #8b949e; }}
+        .m-alert {{ color: #ff7b72; border: 1px solid #ff7b72; padding: 10px; border-radius: 6px; background-color: rgba(255, 123, 114, 0.1); font-weight: bold; }}
+        .m-normal {{ color: #8b949e; border: 1px dashed #30363d; padding: 10px; border-radius: 6px; }}
     </style>
 </head>
 <body>
@@ -96,7 +96,7 @@ html_template = """
 
     <div class="maintenance-box">
         <div class="{m_class}">
-            🔧 系統維護提示: {m_msg}
+            {m_msg}
         </div>
     </div>
 </body>
@@ -112,13 +112,11 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     ax1 = fig.add_subplot(gs[0])
     ax2 = fig.add_subplot(gs[1], sharey=ax1)
 
-    # 繪製 K 線 (日線)
     mpf.plot(lookback_slice, type='candle', style=mpf_style, ax=ax1, show_nontrading=False, datetime_format='%Y-%m-%d')
     
     if not np.isnan(sma200_val):
          ax1.axhline(y=sma200_val, color='gray', linestyle='--', linewidth=1, label='SMA200', alpha=0.7)
 
-    # 繪製 ATR 止盈線
     if stop_price > 0:
         ax1.axhline(y=stop_price, color='#e5534b', linewidth=1.5, linestyle='-', label=f'ATR Stop ({atr_mult}x)', alpha=0.9)
 
@@ -132,15 +130,13 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     ax1.set_ylabel("Price")
     ax1.legend(fontsize='small', facecolor='#161b22', edgecolor='#30363d')
 
-    # Volume Profile Coloring
     colors = []
     for p in price_bins:
         if val_price <= p <= vah_price:
-            colors.append('#58a6ff') # Value Area 內 (藍色)
+            colors.append('#58a6ff') 
         else:
-            colors.append('#30363d') # Value Area 外 (深灰)
+            colors.append('#30363d') 
             
-    # 特別標註 POC (金色)
     poc_idx = np.argmax(vol_by_bin)
     colors[poc_idx] = '#d29922' 
 
@@ -159,43 +155,27 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
 # ==========================================
 def calculate_data(ticker):
     try:
-        # 1. 取得日線數據
         df_daily = yf.download(ticker, period="3y", interval="1d", progress=False)
         if isinstance(df_daily.columns, pd.MultiIndex): df_daily.columns = df_daily.columns.get_level_values(0)
         
         if len(df_daily) < 200: return None
         sma200 = df_daily['Close'].rolling(window=200).mean().iloc[-1]
         
-        # ATR 計算
         prev_close = df_daily['Close'].shift(1)
-        tr = pd.concat([df_daily['High']-df_daily['Low'], 
-                        (df_daily['High']-prev_close).abs(), 
-                        (df_daily['Low']-prev_close).abs()], axis=1).max(axis=1)
+        tr = pd.concat([df_daily['High']-df_daily['Low'], (df_daily['High']-prev_close).abs(), (df_daily['Low']-prev_close).abs()], axis=1).max(axis=1)
         atr = tr.rolling(window=14).mean().iloc[-1]
-        
-        # 恐慌指數 (Panic Filter 2.0)
         is_panic = (df_daily['High'].iloc[-1] - df_daily['Low'].iloc[-1]) > (panic_mult * atr)
         
         current_price = df_daily['Close'].iloc[-1]
         is_bull_market = current_price > sma200
         
-        # 2. 切割數據
         df_slice = df_daily.iloc[-lookback_days:].copy()
-        
-        # 3. 計算 Volume Profile
         p_slice = (df_slice['High'] + df_slice['Low'] + df_slice['Close']) / 3
         v_slice = df_slice['Volume']
         
         range_min = df_slice['Low'].min()
         range_max = df_slice['High'].max()
-        
-        vol_bin, bin_edges = np.histogram(
-            p_slice, 
-            bins=bins_count, 
-            range=(range_min, range_max), 
-            weights=v_slice
-        )
-        
+        vol_bin, bin_edges = np.histogram(p_slice, bins=bins_count, range=(range_min, range_max), weights=v_slice)
         poc_idx = np.argmax(vol_bin)
         bin_mids = (bin_edges[:-1] + bin_edges[1:]) / 2
         poc_price = bin_mids[poc_idx]
@@ -213,16 +193,12 @@ def calculate_data(ticker):
         val_price = bin_mids[low]
         vah_price = bin_mids[up]
         
-        # 4. 計算 ATR 止盈價 (模擬持有最高點)
         recent_highest_close = df_slice['Close'].max()
         stop_price = recent_highest_close - (atr_mult * atr)
-        
         dist_pct_stop = ((current_price - stop_price) / current_price) * 100
         
         signal_code = 0
-        action_html = ""
-        status_html = ""
-        color_class = ""
+        action_html, status_html, color_class = "", "", ""
         
         if not is_bull_market:
             signal_code = -1
@@ -235,24 +211,22 @@ def calculate_data(ticker):
             action_html = "⚠️ 恐慌觀望 (High Volatility)"
             status_html = f"今日震幅 ({df_daily['High'].iloc[-1]-df_daily['Low'].iloc[-1]:.2f}) > {panic_mult}x ATR。"
         else:
-            # Entry Logic
             if current_price < val_price:
                 signal_code = 1
                 color_class = "green"
                 action_html = "★ 強力抄底 (Dip Buy)"
                 status_html = "價格回調至 VAL，勝率最高點。"
             elif current_price > poc_price:
-                # Exit Logic (ATR)
                 if current_price < stop_price:
                      signal_code = -2
                      color_class = "red"
                      action_html = "▼ 獲利了結 (Take Profit)"
-                     status_html = f"跌破 ATR 止盈線 ({stop_price:.2f})。<br>波段趨勢轉弱，入袋為安。"
+                     status_html = f"跌破 ATR 止盈線 ({stop_price:.2f})。"
                 else:
                     signal_code = 2
                     color_class = "cyan"
                     action_html = "▲ 續抱/追勢 (Let Run)"
-                    status_html = f"價格在 ATR 止盈線之上。<br>安全距離 {dist_pct_stop:.1f}%，建議 2x 槓桿。"
+                    status_html = f"ATR 止盈之上，建議 2x 槓桿。"
             else:
                 signal_code = 0
                 color_class = "yellow"
@@ -273,7 +247,7 @@ def calculate_data(ticker):
         return None
 
 # ==========================================
-# 5. 生成 HTML
+# 5. 生成 HTML & 維護檢查
 # ==========================================
 cards_html = ""
 market_signals = {}
@@ -300,24 +274,28 @@ for ticker in target_tickers:
         """
 
 s_qqq = market_signals.get('QQQ', 0)
-if s_qqq == -1:
-    v_title, v_cls, v_msg = "🚨 熊市警報", "red", "跌破年線，全數清倉。"
-elif s_qqq == -2:
-    v_title, v_cls, v_msg = "💰 獲利了結", "red", "跌破 ATR 止盈線，波段結束。"
-elif s_qqq == 1:
-    v_title, v_cls, v_msg = "🎯 絕佳買點", "green", "回測 VAL 支撐，進場抄底。"
-elif s_qqq == 2:
-    v_title, v_cls, v_msg = "🚀 趨勢續抱 (2x Leverage)", "purple", "建議持有 QLD (2x QQQ)。"
-else:
-    v_title, v_cls, v_msg = "⚖️ 震盪觀察", "yellow", "區間震盪，等待方向。"
+if s_qqq == -1: v_title, v_cls, v_msg = "🚨 熊市警報", "red", "跌破年線，全數清倉。"
+elif s_qqq == -2: v_title, v_cls, v_msg = "💰 獲利了結", "red", "跌破 ATR 止盈線，波段結束。"
+elif s_qqq == 1: v_title, v_cls, v_msg = "🎯 絕佳買點", "green", "回測 VAL 支撐，進場抄底。"
+elif s_qqq == 2: v_title, v_cls, v_msg = "🚀 趨勢續抱 (2x Leverage)", "purple", "建議持有 QLD (2x QQQ)。"
+else: v_title, v_cls, v_msg = "⚖️ 震盪觀察", "yellow", "區間震盪，等待方向。"
 
-day_of_month = datetime.datetime.now().day
-if day_of_month <= 5:
+# ⏰ 智能維護鬧鐘 (Quarterly Maintenance Timer)
+now = datetime.datetime.now()
+maintenance_months = [1, 4, 7, 10]
+is_maintenance_time = (now.month in maintenance_months) and (now.day <= 7)
+
+if is_maintenance_time:
     m_class = "m-alert"
-    m_msg = f"⚠️ <b>月初健檢！</b>請執行 <code>scan_5d_quarterly.py</code> 確認參數。"
+    m_msg = f"🚨 <b>季度健檢警報！</b> 現在是 {now.month} 月初，請務必執行 <code>scan_5d_quarterly.py</code> 確認參數是否老化。"
+    print("\n" + "!"*60)
+    print(f"🚨 系統維護警報 (Quarterly Maintenance) 🚨")
+    print(f"   現在是 {now.month} 月初，請立即執行季度健檢！")
+    print("   👉 python scan_5d_quarterly.py")
+    print("!"*60 + "\n")
 else:
     m_class = "m-normal"
-    m_msg = "Final Gold 模式：LB 98 / Bins 7 / VA 0.80 / ATR 2.7 / Panic 2.0。"
+    m_msg = f"✅ 系統狀態正常。下次健檢月份：{[m for m in maintenance_months if m > now.month][0] if now.month < 10 else 1} 月。"
 
 final_html = html_template.format(
     lookback=lookback_days, bins=bins_count, va=va_pct, atr=atr_mult, panic=panic_mult,
@@ -330,4 +308,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("✅ Main Dashboard Updated to Final Gold (Panic 2.0) Edition!")
+print("✅ Main Dashboard Updated! (Timer Active)")
