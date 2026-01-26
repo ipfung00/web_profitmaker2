@@ -17,7 +17,7 @@ import base64
 plt.rcParams['axes.unicode_minus'] = False 
 
 # ==========================================
-# 1. 策略參數 (Quality King Edition)
+# 1. 策略參數 (Final Gold Edition)
 # ==========================================
 target_tickers = ['SPY', 'QQQ', 'IWM']
 ticker_names = {
@@ -26,12 +26,13 @@ ticker_names = {
     'IWM': '羅素2000 (IWM)'
 }
 
-# --- 核心參數：基於 Ultimate Quality Scan ---
-# 👑 品質王者數據：ROI +744.6% | MaxDD -17.5% | CV 8.03% (極度穩健)
-# 特性：Bins 12 (低解析度) 過濾所有微觀雜訊，只抓宏觀大支撐，容錯率極高。
-lookback_days = 71    # 🛡️ 穩健週期 (約3.5個月)
-bins_count = 12       # 🛡️ 粗顆粒解析度 (Macro Structure)
-va_pct = 0.80         # 🛡️ 寬價值區 (Broad Value)
+# --- 核心參數：基於 Deep Optimized Scan (ROI 1505%) ---
+# 👑 最終黃金參數：ROI +1505.9% | MaxDD -24.2% | CV 17.17%
+# 邏輯：LB 98 (約5個月趨勢) + Bins 7 (七重天宏觀) + VA 0.80 (標準價值) + ATR 2.7 (靈敏止盈)
+lookback_days = 98    # 🛡️ 中長線趨勢 (約20週)
+bins_count = 7        # 🛡️ 極致宏觀濾網
+va_pct = 0.80         # 🛡️ 標準價值區
+atr_mult = 2.7        # 🚀 靈敏移動止盈 (比3.0更快鎖利)
 
 # 繪圖風格
 plt.style.use('dark_background')
@@ -87,7 +88,7 @@ html_template = """
 
     <div class="update-time">最後更新 (美東時間): {update_time}</div>
     <div style="text-align: center; margin-bottom: 20px; font-size: 0.9em; color: #8b949e;">
-        策略核心：High/Low 全範圍邏輯 (Quality King) | 參數: LB {lookback} / Bins {bins} / VA {va}
+        策略核心：Final Gold Edition (ATR Exit) | 參數: LB {lookback} / ATR {atr}x / VA {va}
     </div>
     
     {content}
@@ -104,7 +105,7 @@ html_template = """
 # ==========================================
 # 3. 繪圖函數 (修正版 - 對齊 High/Low)
 # ==========================================
-def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, vah_price, price_bins, vol_by_bin):
+def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, vah_price, price_bins, vol_by_bin, stop_price):
     fig = plt.figure(figsize=(10, 6), facecolor='#161b22')
     gs = fig.add_gridspec(1, 2,  width_ratios=(3, 1), left=0.05, right=0.95, wspace=0.05)
     ax1 = fig.add_subplot(gs[0])
@@ -116,9 +117,12 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     if not np.isnan(sma200_val):
          ax1.axhline(y=sma200_val, color='gray', linestyle='--', linewidth=1, label='SMA200', alpha=0.7)
 
-    ax1.axhline(y=poc_price, color='#d29922', linewidth=1.5, linestyle='-', label='POC', alpha=0.9)
-    ax1.axhline(y=val_price, color='#3fb950', linewidth=1, linestyle='--', label='VAL', alpha=0.9)
-    ax1.axhline(y=vah_price, color='#ff7b72', linewidth=1, linestyle='--', label='VAH', alpha=0.9)
+    # 繪製 ATR 止盈線
+    if stop_price > 0:
+        ax1.axhline(y=stop_price, color='#e5534b', linewidth=1.5, linestyle='-', label=f'ATR Stop ({atr_mult}x)', alpha=0.9)
+
+    ax1.axhline(y=poc_price, color='#d29922', linewidth=1.5, linestyle=':', label='POC (Entry Only)', alpha=0.8)
+    ax1.axhline(y=val_price, color='#3fb950', linewidth=1, linestyle='--', label='VAL (Entry Only)', alpha=0.8)
     
     current_price = lookback_slice['Close'].iloc[-1]
     ax1.axhline(y=current_price, color='white', linewidth=0.8, linestyle=':')
@@ -150,7 +154,7 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     return img_base64
 
 # ==========================================
-# 4. 核心運算 (High/Low Range Real Logic)
+# 4. 核心運算 (Profit Booster Logic)
 # ==========================================
 def calculate_data(ticker):
     try:
@@ -160,24 +164,31 @@ def calculate_data(ticker):
         
         if len(df_daily) < 200: return None
         sma200 = df_daily['Close'].rolling(window=200).mean().iloc[-1]
+        
+        # ATR 計算
+        prev_close = df_daily['Close'].shift(1)
+        tr = pd.concat([df_daily['High']-df_daily['Low'], 
+                        (df_daily['High']-prev_close).abs(), 
+                        (df_daily['Low']-prev_close).abs()], axis=1).max(axis=1)
+        atr = tr.rolling(window=14).mean().iloc[-1]
+        
         current_price = df_daily['Close'].iloc[-1]
         is_bull_market = current_price > sma200
         
         # 2. 切割數據
         df_slice = df_daily.iloc[-lookback_days:].copy()
         
-        # 3. 計算 Volume Profile (全範圍邏輯)
+        # 3. 計算 Volume Profile
         p_slice = (df_slice['High'] + df_slice['Low'] + df_slice['Close']) / 3
         v_slice = df_slice['Volume']
         
-        # --- 關鍵一致性：使用 High/Low 定義 Histogram 邊界 ---
         range_min = df_slice['Low'].min()
         range_max = df_slice['High'].max()
         
         vol_bin, bin_edges = np.histogram(
             p_slice, 
             bins=bins_count, 
-            range=(range_min, range_max), # ✅ 強制對齊 High/Low
+            range=(range_min, range_max), 
             weights=v_slice
         )
         
@@ -198,8 +209,11 @@ def calculate_data(ticker):
         val_price = bin_mids[low]
         vah_price = bin_mids[up]
         
-        dist_pct_poc = ((current_price - poc_price) / current_price) * 100
-        dist_pct_val = ((current_price - val_price) / current_price) * 100 
+        # 4. 計算 ATR 止盈價 (模擬持有最高點)
+        recent_highest_close = df_slice['Close'].max()
+        stop_price = recent_highest_close - (atr_mult * atr)
+        
+        dist_pct_stop = ((current_price - stop_price) / current_price) * 100
         
         signal_code = 0
         action_html = ""
@@ -212,32 +226,38 @@ def calculate_data(ticker):
             action_html = "▼ 清倉離場 (Bear Market)"
             status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200:.2f})。"
         else:
+            # Entry Logic (VP)
             if current_price < val_price:
                 signal_code = 1
                 color_class = "green"
                 action_html = "★ 強力抄底 (Dip Buy)"
-                status_html = "價格回調至價值區下緣 (VAL)。<br>勝率最高點，買入並持有。"
+                status_html = "價格回調至 VAL，勝率最高點。"
             elif current_price > poc_price:
-                signal_code = 2
-                color_class = "cyan"
-                action_html = "▲ 強勢買進/續抱 (Reclaim)"
-                status_html = "價格站上 POC 分水嶺。<br>多頭強勢區，確保拎貨在手。"
+                # Exit Logic (ATR) - Check if stop hit
+                if current_price < stop_price:
+                     signal_code = -2
+                     color_class = "red"
+                     action_html = "▼ 獲利了結 (Take Profit)"
+                     status_html = f"跌破 ATR 止盈線 ({stop_price:.2f})。<br>波段趨勢轉弱，入袋為安。"
+                else:
+                    signal_code = 2
+                    color_class = "cyan"
+                    action_html = "▲ 續抱/追勢 (Let Run)"
+                    status_html = f"價格在 ATR 止盈線之上。<br>安全距離 {dist_pct_stop:.1f}%，讓獲利奔跑。"
             else:
                 signal_code = 0
                 color_class = "yellow"
-                action_html = "⚠️ 關鍵決策 (Check POC)"
-                status_html = f"位於震盪區間 (VAL < P < POC)。<br>"
-                status_html += f"1. 若剛<b>跌破 POC</b>: <span class='red'>應已離場 (獲利了結)</span><br>"
-                status_html += f"2. 若從<b>底部上來</b>: <span class='green'>續抱 (目標 POC)</span>"
+                action_html = "⚠️ 觀察 (Wait)"
+                status_html = f"位於震盪區間 (VAL < P < POC)。"
 
-        chart_base64 = generate_chart(df_daily, df_slice, sma200, poc_price, val_price, vah_price, bin_mids, vol_bin)
+        chart_base64 = generate_chart(df_daily, df_slice, sma200, poc_price, val_price, vah_price, bin_mids, vol_bin, stop_price)
 
         return {
             'name': ticker_names[ticker], 'ticker': ticker, 'price': current_price,
-            'poc': poc_price, 'val': val_price, 'sma200': sma200,
-            'dist_pct_val': dist_pct_val, 
+            'poc': poc_price, 'val': val_price, 'sma200': sma200, 'stop_price': stop_price,
+            'dist_pct_val': ((current_price - val_price) / current_price) * 100, 
             'status_html': status_html, 'action_html': action_html, 'color_class': color_class,
-            'signal_code': signal_code, 'dist_pct': dist_pct_poc, 'chart_base64': chart_base64
+            'signal_code': signal_code, 'chart_base64': chart_base64
         }
     except Exception as e:
         print(f"Error processing {ticker}: {e}")
@@ -259,10 +279,10 @@ for ticker in target_tickers:
         <div class="card">
             {header}
             <div class="row"><span>現價:</span> <span>{res['price']:.2f}</span></div>
-            <div class="row"><span>POC (分水嶺):</span> <span style="color:#d29922">{res['poc']:.2f}</span></div>
-            <div class="row"><span>VAL (抄底線):</span> <span style="color:#3fb950">{res['val']:.2f}</span></div>
-            <div class="row"><span>距離 VAL:</span> <span style="color:#3fb950">{res['dist_pct_val']:+.2f}%</span></div>
-            <div class="row"><span>SMA200 (生命線):</span> <span style="color:gray">{res['sma200']:.2f}</span></div>
+            <div class="row"><span>ATR 止盈線:</span> <span style="color:#e5534b">{res['stop_price']:.2f}</span></div>
+            <div class="row"><span>POC (買點):</span> <span style="color:#d29922">{res['poc']:.2f}</span></div>
+            <div class="row"><span>VAL (抄底):</span> <span style="color:#3fb950">{res['val']:.2f}</span></div>
+            <div class="row"><span>SMA200:</span> <span style="color:gray">{res['sma200']:.2f}</span></div>
             <hr style="border: 0; border-top: 1px dashed #30363d;">
             <div class="row"><span>狀態:</span> <span class="{res['color_class']}">{res['status_html']}</span></div>
             <div class="row"><span>指令:</span> <span class="{res['color_class']} bold" style="font-size:1.2em">{res['action_html']}</span></div>
@@ -272,24 +292,26 @@ for ticker in target_tickers:
 
 s_qqq = market_signals.get('QQQ', 0)
 if s_qqq == -1:
-    v_title, v_cls, v_msg = "🚨 熊市警報 (Bear Market)", "red", "QQQ 跌破年線，清空持倉，保留現金。"
+    v_title, v_cls, v_msg = "🚨 熊市警報", "red", "跌破年線，全數清倉。"
+elif s_qqq == -2:
+    v_title, v_cls, v_msg = "💰 獲利了結", "red", "跌破 ATR 止盈線，波段結束。"
 elif s_qqq == 1:
-    v_title, v_cls, v_msg = "🎯 絕佳買點 (Dip Buy)", "green", "價格回測 VAL 支撐，期望值極高，果斷買入。"
+    v_title, v_cls, v_msg = "🎯 絕佳買點", "green", "回測 VAL 支撐，進場抄底。"
 elif s_qqq == 2:
-    v_title, v_cls, v_msg = "🚀 趨勢強勢 (Trend Run)", "cyan", "價格站穩 POC 之上，空手者立即買回，持倉者抱緊。"
+    v_title, v_cls, v_msg = "🚀 趨勢續抱", "cyan", "未破 ATR 止盈線，持續持有。"
 else:
-    v_title, v_cls, v_msg = "⚖️ 多空對峙 (Indecision)", "yellow", "價格在震盪區。若剛跌破 POC 先離場；若持底倉則續抱。"
+    v_title, v_cls, v_msg = "⚖️ 震盪觀察", "yellow", "區間震盪，等待方向。"
 
 day_of_month = datetime.datetime.now().day
 if day_of_month <= 5:
     m_class = "m-alert"
-    m_msg = f"⚠️ <b>月初健檢時間！</b>請執行 <code>check_overfitting.py</code> 確認參數穩定性。"
+    m_msg = f"⚠️ <b>月初健檢！</b>請執行 <code>scan_4d_deep.py</code> 確認參數。"
 else:
     m_class = "m-normal"
-    m_msg = "參數魯棒性監測：建議每月 1~5 號執行一次全域掃描。"
+    m_msg = "Final Gold 模式：LB 98 / Bins 7 / VA 0.80 / ATR 2.7。"
 
 final_html = html_template.format(
-    lookback=lookback_days, bins=bins_count, va=va_pct,
+    lookback=lookback_days, bins=bins_count, va=va_pct, atr=atr_mult,
     update_time=datetime.datetime.now(ZoneInfo("America/New_York")).strftime('%Y-%m-%d %H:%M'), 
     content=f"{cards_html}<div class='verdict'><div class='verdict-title {v_cls}'>{v_title}</div><div style='margin-left: 20px;'>{v_msg}</div></div>",
     m_class=m_class,
@@ -299,4 +321,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("✅ Main Dashboard Updated to Quality King (71/12/0.80)!")
+print("✅ Main Dashboard Updated to Final Gold Edition (98/7/0.80/ATR 2.7)!")
