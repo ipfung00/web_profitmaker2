@@ -36,7 +36,7 @@ panic_mult = 2.0
 # 🔫 狙擊手參數
 sniper_rsi_threshold = 30
 sniper_bias_threshold = -0.11  # -11%
-sniper_stop_lookback = 10      # 短期止損
+sniper_stop_lookback = 14      # 短期止損
 
 # 🎨 UI 顏色設定
 COLOR_ATR_STOP = '#e5534b'    # 紅色 (長線止盈)
