@@ -36,11 +36,11 @@ panic_mult = 2.0
 # 🔫 狙擊手參數
 sniper_rsi_threshold = 30
 sniper_bias_threshold = -0.11  # -11%
-sniper_stop_lookback = 14      # 短期止損
+sniper_stop_lookback = 14      # 短期止損 (已更新至 14)
 
 # 🎨 UI 顏色設定
 COLOR_ATR_STOP = '#e5534b'    # 紅色 (長線止盈)
-COLOR_SNIPER_STOP = '#ff79c6' # 亮粉色 (短線止損) - 改這裡區分顏色
+COLOR_SNIPER_STOP = '#ff79c6' # 亮粉色 (短線止損)
 
 # 繪圖風格
 plt.style.use('dark_background')
@@ -236,7 +236,7 @@ def calculate_data(ticker):
             signal_code = 3
             color_class = "orange"
             action_html = "🔫 狙擊手進場 (Sniper Buy)"
-            status_html = f"RSI({rsi:.1f})<30 且 乖離({bias*100:.1f}%)<-11%。<br>建議投入 30% 資金。"
+            status_html = f"RSI({rsi:.1f})<30 且 乖離({bias*100:.1f}%)<-11%。<br>建議投入 50% 資金。"
         elif not is_bull_market:
             # 特例：狙擊單續抱
             if current_price > sniper_stop:
@@ -270,7 +270,7 @@ def calculate_data(ticker):
                     signal_code = 2
                     color_class = "cyan"
                     action_html = "▲ 續抱/追勢 (Let Run)"
-                    status_html = f"ATR 止盈之上，建議 2x 槓桿。"
+                    status_html = f"ATR 止盈之上，建議 1x 倉位 (QQQ)。"
             else:
                 signal_code = 0
                 color_class = "yellow"
@@ -301,7 +301,6 @@ for ticker in target_tickers:
         market_signals[ticker] = res['signal_code']
         header = f'<div class="header {res["color_class"]}"><span>{res["name"]}</span><span class="tag {res["color_class"]}" style="border-color: currentColor;">{res["ticker"]}</span></div>'
         
-        # UI 優化：將 Sniper 止損顏色改為亮粉色
         cards_html += f"""
         <div class="card">
             {header}
@@ -319,19 +318,19 @@ for ticker in target_tickers:
         """
 
 s_qqq = market_signals.get('QQQ', 0)
-if s_qqq == 3: v_title, v_cls, v_msg = "🔫 狙擊時刻 (Sniper Mode)", "orange", "市場極度恐慌，執行 30% 資金抄底。"
+if s_qqq == 3: v_title, v_cls, v_msg = "🔫 狙擊時刻 (Sniper Mode)", "orange", "市場極度恐慌，執行 50% 資金抄底。"
 elif s_qqq == -3: v_title, v_cls, v_msg = "🛡️ 狙擊防守 (Hold)", "orange", "熊市反彈中，狙擊單請設好短期止損續抱。"
 elif s_qqq == -1: v_title, v_cls, v_msg = "🚨 熊市警報", "red", "跌破年線，全數清倉。"
 elif s_qqq == -2: v_title, v_cls, v_msg = "💰 獲利了結", "red", "跌破 ATR 止盈線，波段結束。"
 elif s_qqq == 1: v_title, v_cls, v_msg = "🎯 絕佳買點", "green", "回測 VAL 支撐，進場抄底。"
-elif s_qqq == 2: v_title, v_cls, v_msg = "🚀 趨勢續抱 (2x Leverage)", "purple", "建議持有 QLD (2x QQQ)。"
+elif s_qqq == 2: v_title, v_cls, v_msg = "🚀 趨勢續抱 (1x Leverage)", "purple", "建議持有 QQQ (1x)。"
 else: v_title, v_cls, v_msg = "⚖️ 震盪觀察", "yellow", "區間震盪，等待方向。"
 
 # ⏰ 智能維護鬧鐘 (整合年度與季度)
 now = datetime.datetime.now()
 maintenance_months = [1, 4, 7, 10]
 is_quarterly_time = (now.month in maintenance_months) and (now.day <= 7)
-is_annual_time = (now.month == 12) # 整個 12 月都會提醒
+is_annual_time = (now.month == 12) 
 
 m_class = "m-normal"
 m_msg = "✅ 系統狀態正常。"
@@ -368,4 +367,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("✅ UI Updated: Sniper Stop color changed to Pink & Annual Timer Set.")
+print("✅ Main Dashboard Updated: Instructions changed to 1X (QQQ).")
