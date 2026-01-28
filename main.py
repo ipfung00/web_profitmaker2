@@ -10,14 +10,17 @@ import matplotlib.pyplot as plt
 import mplfinance as mpf
 import io
 import base64
+import config  # <--- 引入配置檔
 
 # ==========================================
 # 0. 系統設定
 # ==========================================
 plt.rcParams['axes.unicode_minus'] = False 
+plt.style.use('dark_background')
+mpf_style = mpf.make_mpf_style(base_mpf_style='nightclouds', rc={'axes.grid': False})
 
 # ==========================================
-# 1. 策略參數 (Final Gold: Sniper Edition)
+# 1. 讀取策略參數 (從 config.py)
 # ==========================================
 target_tickers = ['SPY', 'QQQ', 'IWM']
 ticker_names = {
@@ -27,24 +30,20 @@ ticker_names = {
 }
 
 # 👑 核心參數
-lookback_days = 98      
-bins_count = 7          
-va_pct = 0.80           
-atr_mult = 2.7          
-panic_mult = 2.0        
+lookback_days = config.CORE_PARAMS['LOOKBACK']
+bins_count = config.CORE_PARAMS['BINS']
+va_pct = config.CORE_PARAMS['VA_PCT']
+atr_mult = config.CORE_PARAMS['ATR_MULT']
+panic_mult = config.CORE_PARAMS['PANIC_MULT']
 
 # 🔫 狙擊手參數
-sniper_rsi_threshold = 30
-sniper_bias_threshold = -0.11  # -11%
-sniper_stop_lookback = 14      # 短期止損 (已更新至 14)
+sniper_rsi_threshold = config.SNIPER_PARAMS['RSI_THRESHOLD']
+sniper_bias_threshold = config.SNIPER_PARAMS['BIAS_THRESHOLD']
+sniper_stop_lookback = config.SNIPER_PARAMS['STOP_LOOKBACK']
 
 # 🎨 UI 顏色設定
-COLOR_ATR_STOP = '#e5534b'    # 紅色 (長線止盈)
-COLOR_SNIPER_STOP = '#ff79c6' # 亮粉色 (短線止損)
-
-# 繪圖風格
-plt.style.use('dark_background')
-mpf_style = mpf.make_mpf_style(base_mpf_style='nightclouds', rc={'axes.grid': False})
+COLOR_ATR_STOP = config.UI_COLORS['ATR_STOP']
+COLOR_SNIPER_STOP = config.UI_COLORS['SNIPER_STOP']
 
 # ==========================================
 # 2. HTML 模板
@@ -367,4 +366,4 @@ final_html = html_template.format(
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(final_html)
 
-print("✅ Main Dashboard Updated: Instructions changed to 1X (QQQ).")
+print("✅ Main Dashboard Updated (Config Integrated & Logic Preserved).")
