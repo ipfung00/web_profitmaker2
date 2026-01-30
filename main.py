@@ -5,7 +5,7 @@ import datetime
 from zoneinfo import ZoneInfo
 import os
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('Agg') # 設定後端為非互動模式
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import mplfinance as mpf
@@ -24,33 +24,36 @@ mpf_style = mpf.make_mpf_style(base_mpf_style='nightclouds', rc={'axes.grid': Fa
 # 1. 讀取策略參數 (從 config.py)
 # ==========================================
 target_tickers = ['SPY', 'QQQ', 'IWM']
-ticker_names = {'SPY': '標普500 (SPY)', 'QQQ': '納指100 (QQQ)', 'IWM': '羅素2000 (IWM)'}
+ticker_names = {
+    'SPY': '標普500 (SPY)',
+    'QQQ': '納指100 (QQQ)',
+    'IWM': '羅素2000 (IWM)'
+}
 
-# Core
+# 👑 核心參數
 lookback_days = config.CORE_PARAMS['LOOKBACK']
 bins_count = config.CORE_PARAMS['BINS']
 va_pct = config.CORE_PARAMS['VA_PCT']
 atr_mult = config.CORE_PARAMS['ATR_MULT']
 panic_mult = config.CORE_PARAMS['PANIC_MULT']
 
-# Sniper
+# 🔫 狙擊手參數
 sniper_rsi_threshold = config.SNIPER_PARAMS['RSI_THRESHOLD']
 sniper_bias_threshold = config.SNIPER_PARAMS['BIAS_THRESHOLD']
 sniper_size = config.SNIPER_PARAMS['SIZE']
 sniper_stop_lookback = config.SNIPER_PARAMS['STOP_LOOKBACK']
 
-# Colors
+# 🎨 UI 顏色設定
 COLOR_ATR_STOP = config.UI_COLORS['ATR_STOP']
 COLOR_SNIPER_STOP = config.UI_COLORS['SNIPER_STOP']
 
 # ==========================================
-# 2. HTML 模板工具 (已更新導航列)
+# 2. HTML 模板工具
 # ==========================================
 def get_html_header(title, active_tab):
     """
     active_tab: 'signal', 'trade', 'portfolio', 'structure'
     """
-    # 定義導航狀態
     cls_sig = "active" if active_tab == "signal" else ""
     cls_trd = "active" if active_tab == "trade" else ""
     cls_prt = "active" if active_tab == "portfolio" else ""
@@ -426,9 +429,13 @@ def generate_trades_html(df_trades, df_eq):
         ax.set_ylabel("Return (%)", color='#8b949e')
         ax.legend(fontsize=10, facecolor='#161b22', edgecolor='#30363d', labelcolor='white')
         ax.grid(True, color='#30363d', linestyle=':', alpha=0.5)
+        
+        # [修改] 優化 X 軸日期顯示 (年-月-日)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        # 讓日期標籤旋轉，避免重疊
+        plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
         ax.tick_params(axis='x', colors='#8b949e')
         ax.tick_params(axis='y', colors='#8b949e')
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
         
         buf = io.BytesIO()
         plt.savefig(buf, format='png', bbox_inches='tight', dpi=100, facecolor='#161b22')

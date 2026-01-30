@@ -1,5 +1,5 @@
 import matplotlib
-# [關鍵修正] 必須在 import pyplot 之前設定 Agg 模式
+# [關鍵] 必須在 import pyplot 之前設定 Agg 模式
 matplotlib.use('Agg') 
 
 import pandas as pd
@@ -21,9 +21,8 @@ LEDGER_FILE = 'real_trades.csv'
 BENCHMARK = 'QQQ'
 OUTPUT_HTML = 'portfolio.html'
 
-# UI 風格 (從 config 讀取，確保全站統一)
+# UI 風格 (從 config 讀取)
 plt.style.use('dark_background')
-# [優化] 使用 config 內的顏色，如果找不到則使用預設值
 COLOR_MY_EQ = config.UI_COLORS.get('STRAT_LINE', '#00ff00') 
 COLOR_BENCH = config.UI_COLORS.get('BH_LINE', '#808080')
 
@@ -34,8 +33,20 @@ def load_ledger():
     if not os.path.exists(LEDGER_FILE):
         print(f"❌ 找不到帳本: {LEDGER_FILE}")
         return None
+    
+    # 讀取 CSV
     df = pd.read_csv(LEDGER_FILE)
-    df['Date'] = pd.to_datetime(df['Date'])
+    
+    # 自動清洗數據：刪除空行
+    df.dropna(how='all', inplace=True)
+    df.dropna(subset=['Date', 'Action'], inplace=True)
+    
+    try:
+        df['Date'] = pd.to_datetime(df['Date'])
+    except Exception as e:
+        print(f"❌ 日期格式錯誤，請檢查 CSV: {e}")
+        return None
+        
     return df.sort_values('Date')
 
 def calculate_portfolio(df_trades):
@@ -55,14 +66,24 @@ def calculate_portfolio(df_trades):
     total_invested = 0.0
     trade_idx = 0
     
+    # 強制轉型防止錯誤
+    df_trades['Price'] = pd.to_numeric(df_trades['Price'], errors='coerce').fillna(0)
+    df_trades['Shares'] = pd.to_numeric(df_trades['Shares'], errors='coerce').fillna(0)
+    df_trades['Fee'] = pd.to_numeric(df_trades['Fee'], errors='coerce').fillna(0)
+    
     for d in dates:
         while trade_idx < len(df_trades) and df_trades.iloc[trade_idx]['Date'] <= d:
             t = df_trades.iloc[trade_idx]
-            amt = t['Price'] * t['Shares']
+            
+            price = float(t['Price'])
+            share_count = float(t['Shares'])
+            fee = float(t['Fee'])
+            amt = price * share_count
+            
             if t['Action'] == 'DEPOSIT': cash += amt; total_invested += amt
             elif t['Action'] == 'WITHDRAW': cash -= amt; total_invested -= amt
-            elif t['Action'] == 'BUY': cash -= (amt + t['Fee']); shares += t['Shares']
-            elif t['Action'] == 'SELL': cash += (amt - t['Fee']); shares -= t['Shares']
+            elif t['Action'] == 'BUY': cash -= (amt + fee); shares += share_count
+            elif t['Action'] == 'SELL': cash += (amt - fee); shares -= share_count
             trade_idx += 1
             
         try:
@@ -88,13 +109,22 @@ def generate_report(df_port, market_data):
     ax.set_facecolor('#161b22')
     ax.plot(df_port.index, df_port['Return'], color=COLOR_MY_EQ, linewidth=2, label='Real Portfolio')
     ax.plot(df_port.index, df_port['QQQ_Return'], color=COLOR_BENCH, linestyle='--', linewidth=1.5, label='QQQ')
-    ax.fill_between(df_port.index, df_port['Return'], df_port['QQQ_Return'], where=(df_port['Return']>df_port['QQQ_Return']), color='green', alpha=0.1, interpolate=True)
-    ax.fill_between(df_port.index, df_port['Return'], df_port['QQQ_Return'], where=(df_port['Return']<=df_port['QQQ_Return']), color='red', alpha=0.1, interpolate=True)
+    
+    ax.fill_between(df_port.index, df_port['Return'], df_port['QQQ_Return'], 
+                    where=(df_port['Return'] > df_port['QQQ_Return']), 
+                    interpolate=True, color='green', alpha=0.1)
+    ax.fill_between(df_port.index, df_port['Return'], df_port['QQQ_Return'], 
+                    where=(df_port['Return'] <= df_port['QQQ_Return']), 
+                    interpolate=True, color='red', alpha=0.1)
+
     ax.set_title("Real Account Performance vs QQQ", color='white', fontsize=14)
     ax.set_ylabel("Return (%)", color='#8b949e')
     ax.legend(fontsize=10, facecolor='#161b22', edgecolor='#30363d', labelcolor='white')
     ax.grid(True, color='#30363d', linestyle=':', alpha=0.5)
-    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+    
+    # [修改] 優化 X 軸日期顯示 (年-月-日) + 旋轉 45 度
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+    plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
     ax.tick_params(colors='#8b949e')
     
     buf = io.BytesIO()
@@ -103,14 +133,18 @@ def generate_report(df_port, market_data):
     buf.seek(0)
     chart_b64 = base64.b64encode(buf.read()).decode('utf-8')
     
-    # HTML
+    # HTML Generation
     cur_eq = df_port['Equity'].iloc[-1]
     cur_ret = df_port['Return'].iloc[-1]
     cur_qqq = df_port['QQQ_Return'].iloc[-1]
     diff = cur_ret - cur_qqq
     diff_cls = "green" if diff > 0 else "red"
     
-    df_ledger = pd.read_csv(LEDGER_FILE).sort_values('Date', ascending=False)
+    df_ledger = pd.read_csv(LEDGER_FILE)
+    df_ledger.dropna(how='all', inplace=True)
+    df_ledger.dropna(subset=['Date', 'Action'], inplace=True)
+    df_ledger = df_ledger.sort_values('Date', ascending=False)
+    
     table_html = df_ledger.to_html(index=False, classes="table", border=0, justify='left')
     
     html = f"""
