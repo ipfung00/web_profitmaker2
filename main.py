@@ -5,8 +5,9 @@ import datetime
 from zoneinfo import ZoneInfo
 import os
 import matplotlib
-matplotlib.use('Agg') # 設定後端為非互動模式
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import mplfinance as mpf
 import io
 import base64
@@ -23,57 +24,58 @@ mpf_style = mpf.make_mpf_style(base_mpf_style='nightclouds', rc={'axes.grid': Fa
 # 1. 讀取策略參數 (從 config.py)
 # ==========================================
 target_tickers = ['SPY', 'QQQ', 'IWM']
-ticker_names = {
-    'SPY': '標普500 (SPY)',
-    'QQQ': '納指100 (QQQ)',
-    'IWM': '羅素2000 (IWM)'
-}
+ticker_names = {'SPY': '標普500 (SPY)', 'QQQ': '納指100 (QQQ)', 'IWM': '羅素2000 (IWM)'}
 
-# 👑 核心參數
+# Core
 lookback_days = config.CORE_PARAMS['LOOKBACK']
 bins_count = config.CORE_PARAMS['BINS']
 va_pct = config.CORE_PARAMS['VA_PCT']
 atr_mult = config.CORE_PARAMS['ATR_MULT']
 panic_mult = config.CORE_PARAMS['PANIC_MULT']
 
-# 🔫 狙擊手參數
+# Sniper
 sniper_rsi_threshold = config.SNIPER_PARAMS['RSI_THRESHOLD']
 sniper_bias_threshold = config.SNIPER_PARAMS['BIAS_THRESHOLD']
+sniper_size = config.SNIPER_PARAMS['SIZE']
 sniper_stop_lookback = config.SNIPER_PARAMS['STOP_LOOKBACK']
 
-# 🎨 UI 顏色設定
+# Colors
 COLOR_ATR_STOP = config.UI_COLORS['ATR_STOP']
 COLOR_SNIPER_STOP = config.UI_COLORS['SNIPER_STOP']
 
 # ==========================================
-# 2. HTML 模板
+# 2. HTML 模板工具 (已更新導航列)
 # ==========================================
-html_template = """
+def get_html_header(title, active_tab):
+    """
+    active_tab: 'signal', 'trade', 'portfolio', 'structure'
+    """
+    # 定義導航狀態
+    cls_sig = "active" if active_tab == "signal" else ""
+    cls_trd = "active" if active_tab == "trade" else ""
+    cls_prt = "active" if active_tab == "portfolio" else ""
+    cls_str = "active" if active_tab == "structure" else ""
+    
+    return f"""
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Quant Trading Dashboard</title>
+    <title>{title}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {{ background-color: #0d1117; color: #c9d1d9; font-family: 'Microsoft JhengHei', 'Consolas', sans-serif; padding: 20px; margin: 0; }}
         
         .nav {{ display: flex; border-bottom: 1px solid #30363d; margin-bottom: 20px; }}
-        .nav-item {{ padding: 10px 20px; text-decoration: none; color: #8b949e; font-weight: bold; }}
+        .nav-item {{ padding: 10px 20px; text-decoration: none; color: #8b949e; font-weight: bold; cursor: pointer; }}
         .nav-item:hover {{ color: #c9d1d9; background-color: #161b22; }}
         .nav-item.active {{ color: #58a6ff; border-bottom: 2px solid #58a6ff; }}
 
         .card {{ background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 15px; margin-bottom: 20px; }}
         .header {{ font-size: 1.2em; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #30363d; padding-bottom: 5px; display: flex; justify-content: space-between; align-items: center; }}
         
-        .green {{ color: #3fb950; }}
-        .red {{ color: #ff7b72; }}
-        .yellow {{ color: #d29922; }}
-        .cyan {{ color: #58a6ff; }}
-        .gray {{ color: #8b949e; }}
-        .purple {{ color: #a371f7; }}
-        .orange {{ color: #f0883e; }}
-        
-        .bold {{ font-weight: bold; }}
+        .green {{ color: #3fb950; }} .red {{ color: #ff7b72; }} .yellow {{ color: #d29922; }} 
+        .cyan {{ color: #58a6ff; }} .gray {{ color: #8b949e; }} .purple {{ color: #a371f7; }} .orange {{ color: #f0883e; }}
+        .bold {{ font-weight: bold; }} 
         .row {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
         
         .verdict {{ background-color: #161b22; border: 1px solid #8b949e; padding: 20px; margin-top: 30px; }}
@@ -84,6 +86,14 @@ html_template = """
         .chart-img {{ max-width: 100%; height: auto; display: block; }}
         .tag {{ font-size: 0.8em; padding: 2px 6px; border-radius: 4px; border: 1px solid; }}
         
+        /* Table Styles */
+        table {{ width: 100%; border-collapse: collapse; font-size: 0.9em; }}
+        th, td {{ padding: 10px; text-align: left; border-bottom: 1px solid #30363d; }}
+        th {{ color: #8b949e; }}
+        tr:hover {{ background-color: #21262d; }}
+        .pnl-pos {{ color: #3fb950; }}
+        .pnl-neg {{ color: #ff7b72; }}
+        
         .maintenance-box {{ margin-top: 40px; padding: 15px; border-top: 1px solid #30363d; font-size: 0.9em; text-align: center; }}
         .m-alert {{ color: #ff7b72; border: 1px solid #ff7b72; padding: 10px; border-radius: 6px; background-color: rgba(255, 123, 114, 0.1); font-weight: bold; }}
         .m-warning {{ color: #d29922; border: 1px solid #d29922; padding: 10px; border-radius: 6px; background-color: rgba(210, 153, 34, 0.1); font-weight: bold; }}
@@ -92,17 +102,16 @@ html_template = """
 </head>
 <body>
     <div class="nav">
-        <a href="index.html" class="nav-item active">🚀 策略訊號 (Signals)</a>
-        <a href="structure.html" class="nav-item">🏗️ 市場結構 (Structure)</a>
+        <a href="index.html" class="nav-item {cls_sig}">🚀 策略訊號 (Signals)</a>
+        <a href="trades.html" class="nav-item {cls_trd}">📊 模擬回測 (Backtest)</a>
+        <a href="portfolio.html" class="nav-item {cls_prt}">💰 真實帳戶 (Portfolio)</a>
+        <a href="structure.html" class="nav-item {cls_str}">🏗️ 市場結構 (Structure)</a>
     </div>
+    <div class="update-time">最後更新 (美東時間): {datetime.datetime.now(ZoneInfo("America/New_York")).strftime('%Y-%m-%d %H:%M')}</div>
+"""
 
-    <div class="update-time">最後更新 (美東時間): {update_time}</div>
-    <div style="text-align: center; margin-bottom: 20px; font-size: 0.9em; color: #8b949e;">
-        策略核心：Final Gold (Sniper Edition) | 參數: LB {lookback} / ATR {atr}x / Sniper (RSI&lt;{rsi}, Bias&lt;{bias}%)
-    </div>
-    
-    {content}
-
+def get_html_footer(m_class, m_msg):
+    return f"""
     <div class="maintenance-box">
         <div class="{m_class}">
             {m_msg}
@@ -122,6 +131,9 @@ def calculate_rsi(data, window=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
+# ==========================================
+# 4. PART A: 訊號生成 (index.html)
+# ==========================================
 def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, vah_price, price_bins, vol_by_bin, stop_price, sniper_stop):
     fig = plt.figure(figsize=(10, 6), facecolor='#161b22')
     gs = fig.add_gridspec(1, 2,  width_ratios=(3, 1), left=0.05, right=0.95, wspace=0.05)
@@ -133,11 +145,8 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     if not np.isnan(sma200_val):
          ax1.axhline(y=sma200_val, color='gray', linestyle='--', linewidth=1, label='SMA200', alpha=0.7)
 
-    # 繪製標準 ATR 止盈線 (紅色)
     if stop_price > 0:
         ax1.axhline(y=stop_price, color=COLOR_ATR_STOP, linewidth=1.5, linestyle='-', label=f'ATR Stop ({atr_mult}x)', alpha=0.9)
-    
-    # 繪製狙擊手止損線 (亮粉色)
     if sniper_stop > 0:
         ax1.axhline(y=sniper_stop, color=COLOR_SNIPER_STOP, linewidth=1.5, linestyle=':', label=f'Sniper Stop ({atr_mult}x)', alpha=0.9)
 
@@ -155,9 +164,7 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     for p in price_bins:
         if val_price <= p <= vah_price: colors.append('#58a6ff') 
         else: colors.append('#30363d') 
-            
-    poc_idx = np.argmax(vol_by_bin)
-    colors[poc_idx] = '#d29922' 
+    colors[np.argmax(vol_by_bin)] = '#d29922' 
 
     ax2.barh(price_bins, vol_by_bin, height=(price_bins[1]-price_bins[0])*0.8, align='center', color=colors, alpha=0.8)
     ax2.axis('off') 
@@ -169,9 +176,6 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     plt.close(fig)
     return img_base64
 
-# ==========================================
-# 4. 核心運算
-# ==========================================
 def calculate_data(ticker):
     try:
         df_daily = yf.download(ticker, period="3y", interval="1d", progress=False)
@@ -180,13 +184,11 @@ def calculate_data(ticker):
         if len(df_daily) < 200: return None
         sma200 = df_daily['Close'].rolling(window=200).mean().iloc[-1]
         
-        # 計算 ATR & Panic
         prev_close = df_daily['Close'].shift(1)
         tr = pd.concat([df_daily['High']-df_daily['Low'], (df_daily['High']-prev_close).abs(), (df_daily['Low']-prev_close).abs()], axis=1).max(axis=1)
         atr = tr.rolling(window=14).mean().iloc[-1]
         is_panic = (df_daily['High'].iloc[-1] - df_daily['Low'].iloc[-1]) > (panic_mult * atr)
         
-        # 計算 RSI & Bias
         rsi_series = calculate_rsi(df_daily['Close'])
         rsi = rsi_series.iloc[-1]
         bias = (df_daily['Close'].iloc[-1] - sma200) / sma200
@@ -195,7 +197,6 @@ def calculate_data(ticker):
         is_bull_market = current_price > sma200
         is_sniper_zone = (rsi < sniper_rsi_threshold) and (bias < sniper_bias_threshold)
         
-        # 切割數據
         df_slice = df_daily.iloc[-lookback_days:].copy()
         p_slice = (df_slice['High'] + df_slice['Low'] + df_slice['Close']) / 3
         v_slice = df_slice['Volume']
@@ -220,7 +221,6 @@ def calculate_data(ticker):
         val_price = bin_mids[low]
         vah_price = bin_mids[up]
         
-        # 止盈線計算
         recent_highest_close = df_slice['Close'].max()
         stop_price = recent_highest_close - (atr_mult * atr)
         
@@ -232,48 +232,31 @@ def calculate_data(ticker):
         
         # --- 決策樹 ---
         if is_sniper_zone:
-            signal_code = 3
-            color_class = "orange"
-            action_html = "🔫 狙擊手進場 (Sniper Buy)"
+            signal_code = 3; color_class = "orange"; action_html = "🔫 狙擊手進場 (Sniper Buy)"
             status_html = f"RSI({rsi:.1f})<30 且 乖離({bias*100:.1f}%)<-11%。<br>建議投入 50% 資金。"
         elif not is_bull_market:
-            # 特例：狙擊單續抱
             if current_price > sniper_stop:
-                signal_code = -3
-                color_class = "orange"
-                action_html = "🛡️ 狙擊單續抱 (Sniper Hold)"
+                signal_code = -3; color_class = "orange"; action_html = "🛡️ 狙擊單續抱 (Sniper Hold)"
                 status_html = f"價格 < SMA200，但位於短期止損 ({sniper_stop:.2f}) 之上。<br>狙擊單續抱，空手者觀望。"
             else:
-                signal_code = -1
-                color_class = "red"
-                action_html = "▼ 清倉離場 (Bear Market)"
+                signal_code = -1; color_class = "red"; action_html = "▼ 清倉離場 (Bear Market)"
                 status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200:.2f})。"
         elif is_panic:
-            signal_code = 0
-            color_class = "yellow"
-            action_html = "⚠️ 恐慌觀望 (High Volatility)"
-            status_html = f"今日震幅 ({df_daily['High'].iloc[-1]-df_daily['Low'].iloc[-1]:.2f}) > {panic_mult}x ATR。"
+            signal_code = 0; color_class = "yellow"; action_html = "⚠️ 恐慌觀望 (High Volatility)"
+            status_html = f"今日震幅 > {panic_mult}x ATR。"
         else:
             if current_price < val_price:
-                signal_code = 1
-                color_class = "green"
-                action_html = "★ 強力抄底 (Dip Buy)"
+                signal_code = 1; color_class = "green"; action_html = "★ 強力抄底 (Dip Buy)"
                 status_html = "價格回調至 VAL，勝率最高點。"
             elif current_price > poc_price:
                 if current_price < stop_price:
-                     signal_code = -2
-                     color_class = "red"
-                     action_html = "▼ 獲利了結 (Take Profit)"
+                     signal_code = -2; color_class = "red"; action_html = "▼ 獲利了結 (Take Profit)"
                      status_html = f"跌破 ATR 止盈線 ({stop_price:.2f})。"
                 else:
-                    signal_code = 2
-                    color_class = "cyan"
-                    action_html = "▲ 續抱/追勢 (Let Run)"
+                    signal_code = 2; color_class = "cyan"; action_html = "▲ 續抱/追勢 (Let Run)"
                     status_html = f"ATR 止盈之上，建議 1x 倉位 (QQQ)。"
             else:
-                signal_code = 0
-                color_class = "yellow"
-                action_html = "⚠️ 觀察 (Wait)"
+                signal_code = 0; color_class = "yellow"; action_html = "⚠️ 觀察 (Wait)"
                 status_html = f"位於震盪區間 (VAL < P < POC)。"
 
         chart_base64 = generate_chart(df_daily, df_slice, sma200, poc_price, val_price, vah_price, bin_mids, vol_bin, stop_price, sniper_stop)
@@ -289,25 +272,234 @@ def calculate_data(ticker):
         return None
 
 # ==========================================
-# 5. 生成 HTML & 維護檢查
+# 5. PART B: 回測與 YTD 生成 (trades.html)
 # ==========================================
+def run_qqq_backtest():
+    print("⏳ 正在計算 QQQ 交易紀錄與 YTD 績效...")
+    start_date = config.START_DATE
+    df = yf.download("QQQ", start=start_date, interval="1d", progress=False)
+    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+    
+    # 指標
+    df['SMA200'] = df['Close'].rolling(window=200).mean()
+    prev_close = df['Close'].shift(1)
+    tr = pd.concat([df['High']-df['Low'], (df['High']-prev_close).abs(), (df['Low']-prev_close).abs()], axis=1).max(axis=1)
+    df['ATR'] = tr.rolling(window=14).mean()
+    df['Is_Panic'] = (df['High'] - df['Low']) > (panic_mult * df['ATR'])
+    df['RSI'] = calculate_rsi(df['Close'], 14)
+    df['Bias'] = (df['Close'] - df['SMA200']) / df['SMA200']
+    
+    roll_max_sniper = df['Close'].rolling(window=sniper_stop_lookback).max().shift(1).fillna(0).values
+    
+    # Numpy 加速
+    highs = df['High'].values
+    lows = df['Low'].values
+    closes = df['Close'].values
+    volumes = df['Volume'].values
+    smas = df['SMA200'].values
+    atrs = df['ATR'].values
+    panics = df['Is_Panic'].values
+    rsis = df['RSI'].values
+    biases = df['Bias'].values
+    tps = (highs + lows + closes) / 3
+    dates = df.index
+    
+    balance = config.INITIAL_CAPITAL
+    position = 0
+    in_pos = False
+    highest_close = 0.0
+    is_fishing = False
+    
+    start_idx = 200
+    bh_shares = config.INITIAL_CAPITAL / closes[start_idx]
+    
+    equity_curve = []
+    trade_log = []
+    entry_date, entry_price, entry_type = None, 0.0, ""
+    
+    for i in range(start_idx, len(df)):
+        curr_date = dates[i]
+        curr_close = closes[i]
+        curr_sma = smas[i]
+        curr_atr = atrs[i]
+        is_panic = panics[i]
+        curr_rsi = rsis[i]
+        curr_bias = biases[i]
+        
+        # VP
+        p_slice = tps[i-lookback_days : i]
+        v_slice = volumes[i-lookback_days : i]
+        range_min = np.min(lows[i-lookback_days : i])
+        range_max = np.max(highs[i-lookback_days : i])
+        vol_bin, bin_edges = np.histogram(p_slice, bins=bins_count, range=(range_min, range_max), weights=v_slice)
+        poc_idx = np.argmax(vol_bin)
+        bin_mids = (bin_edges[:-1] + bin_edges[1:]) / 2
+        poc_price = bin_mids[poc_idx]
+        target_v = vol_bin.sum() * va_pct
+        curr_v = vol_bin[poc_idx]
+        up, low = poc_idx, poc_idx
+        while curr_v < target_v:
+            v_u = vol_bin[up+1] if up < bins_count-1 else 0
+            v_d = vol_bin[low-1] if low > 0 else 0
+            if v_u == 0 and v_d == 0: break
+            if v_u > v_d: up += 1; curr_v += v_u
+            else: low -= 1; curr_v += v_d
+        val_price = bin_mids[low]
+        
+        # Trading
+        if not in_pos:
+            if (curr_rsi < sniper_rsi_threshold) and (curr_bias < sniper_bias_threshold):
+                invest_amt = balance * sniper_size
+                position = invest_amt / curr_close
+                balance -= invest_amt
+                in_pos = True
+                highest_close = curr_close
+                is_fishing = True
+                entry_date, entry_price, entry_type = curr_date, curr_close, "Sniper"
+            elif curr_close > curr_sma and not is_panic:
+                if (curr_close < val_price) or (curr_close > poc_price):
+                    position = balance / curr_close
+                    balance = 0
+                    in_pos = True
+                    highest_close = curr_close
+                    is_fishing = False
+                    entry_date, entry_price, entry_type = curr_date, curr_close, "Core"
+        else:
+            if curr_close > highest_close: highest_close = curr_close
+            if is_fishing and curr_close > curr_sma: is_fishing = False
+            
+            should_sell = False
+            sell_reason = ""
+            
+            if is_fishing:
+                stop_price = roll_max_sniper[i] - (atr_mult * curr_atr)
+                if curr_close < stop_price: should_sell, sell_reason = True, "Sniper Stop"
+            else:
+                stop_price = highest_close - (atr_mult * curr_atr)
+                if curr_close < curr_sma: should_sell, sell_reason = True, "Bear Market"
+                elif curr_close < stop_price: should_sell, sell_reason = True, "ATR Stop"
+            
+            if should_sell:
+                balance += position * curr_close
+                pnl = (curr_close - entry_price) / entry_price * 100
+                trade_log.append({
+                    'Entry Date': entry_date, 'Exit Date': curr_date, 'Type': entry_type,
+                    'Entry Price': entry_price, 'Exit Price': curr_close, 'PnL %': pnl,
+                    'Hold Days': (curr_date - entry_date).days, 'Reason': sell_reason
+                })
+                in_pos = False
+                position = 0
+                highest_close = 0.0
+                is_fishing = False
+
+        curr_equity = balance + (position * curr_close)
+        curr_bh_equity = bh_shares * curr_close
+        equity_curve.append({'Date': curr_date, 'Strategy': curr_equity, 'BuyHold': curr_bh_equity})
+
+    if in_pos:
+        unrealized_pnl = (closes[-1] - entry_price) / entry_price * 100
+        trade_log.append({
+            'Entry Date': entry_date, 'Exit Date': pd.NaT, 'Type': entry_type,
+            'Entry Price': entry_price, 'Exit Price': closes[-1], 'PnL %': unrealized_pnl,
+            'Hold Days': (dates[-1] - entry_date).days, 'Reason': 'OPEN'
+        })
+
+    return pd.DataFrame(trade_log), pd.DataFrame(equity_curve).set_index('Date')
+
+def generate_trades_html(df_trades, df_eq):
+    # 1. YTD
+    current_year = datetime.datetime.now().year
+    df_ytd = df_eq[df_eq.index.year == current_year].copy()
+    if df_ytd.empty: df_ytd = df_eq.iloc[-250:]
+    
+    if not df_ytd.empty:
+        start_strat = df_ytd['Strategy'].iloc[0]
+        start_bh = df_ytd['BuyHold'].iloc[0]
+        y_strat = (df_ytd['Strategy'] / start_strat - 1) * 100
+        y_bh = (df_ytd['BuyHold'] / start_bh - 1) * 100
+        
+        fig, ax = plt.subplots(figsize=(10, 5), facecolor='#161b22')
+        ax.set_facecolor('#161b22')
+        ax.plot(df_ytd.index, y_strat, color='#00ff00', linewidth=2, label='Strategy (YTD)')
+        ax.plot(df_ytd.index, y_bh, color='#808080', linestyle='--', linewidth=1.5, label='QQQ (YTD)')
+        ax.set_title(f"QQQ Year-to-Date Performance ({current_year})", color='white', fontsize=14)
+        ax.set_ylabel("Return (%)", color='#8b949e')
+        ax.legend(fontsize=10, facecolor='#161b22', edgecolor='#30363d', labelcolor='white')
+        ax.grid(True, color='#30363d', linestyle=':', alpha=0.5)
+        ax.tick_params(axis='x', colors='#8b949e')
+        ax.tick_params(axis='y', colors='#8b949e')
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%b'))
+        
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight', dpi=100, facecolor='#161b22')
+        plt.close(fig)
+        buf.seek(0)
+        chart_b64 = base64.b64encode(buf.read()).decode('utf-8')
+    else:
+        chart_b64 = ""
+
+    # 2. Table
+    recent_trades = df_trades.tail(50).iloc[::-1]
+    table_rows = ""
+    for _, row in recent_trades.iterrows():
+        pnl = row['PnL %']
+        pnl_cls = "pnl-pos" if pnl > 0 else "pnl-neg"
+        pnl_txt = f"{pnl:+.2f}%"
+        entry_d = row['Entry Date'].strftime('%Y-%m-%d')
+        exit_d = row['Exit Date'].strftime('%Y-%m-%d') if pd.notnull(row['Exit Date']) else "HOLDING"
+        reason = row['Reason'] if row['Reason'] != 'OPEN' else '<span class="m-warning">HOLDING</span>'
+        
+        buy_color = config.UI_COLORS['BUY_SNIPER'] if row['Type']=='Sniper' else config.UI_COLORS['BUY_CORE']
+        
+        table_rows += f"""
+        <tr>
+            <td>{entry_d}</td>
+            <td style="color: {buy_color}">{row['Type']}</td>
+            <td>{row['Entry Price']:.2f}</td>
+            <td>{exit_d}</td>
+            <td>{row['Exit Price']:.2f}</td>
+            <td class="{pnl_cls} bold">{pnl_txt}</td>
+            <td>{reason}</td>
+        </tr>
+        """
+
+    return f"""
+    <div class="card">
+        <div class="header green">📈 年度績效對比 (Strategy vs QQQ)</div>
+        <div class="chart-container"><img class="chart-img" src="data:image/png;base64,{chart_b64}"></div>
+    </div>
+    <div class="card">
+        <div class="header cyan">📋 最近 50 筆交易紀錄 (QQQ)</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>進場日期</th><th>類型</th><th>買入價</th><th>出場日期</th><th>賣出價</th><th>損益 %</th><th>備註</th>
+                </tr>
+            </thead>
+            <tbody>{table_rows}</tbody>
+        </table>
+    </div>
+    """
+
+# ==========================================
+# 6. 生成 HTML
+# ==========================================
+# A. index.html
 cards_html = ""
 market_signals = {}
-
 for ticker in target_tickers:
     res = calculate_data(ticker)
     if res:
         market_signals[ticker] = res['signal_code']
         header = f'<div class="header {res["color_class"]}"><span>{res["name"]}</span><span class="tag {res["color_class"]}" style="border-color: currentColor;">{res["ticker"]}</span></div>'
-        
         cards_html += f"""
         <div class="card">
             {header}
             <div class="row"><span>現價:</span> <span>{res['price']:.2f}</span></div>
-            <div class="row"><span>ATR 止盈 (長線):</span> <span style="color:{COLOR_ATR_STOP}">{res['stop_price']:.2f}</span></div>
-            <div class="row"><span>Sniper 止損 (短線):</span> <span style="color:{COLOR_SNIPER_STOP}">{res['sniper_stop']:.2f}</span></div>
-            <div class="row"><span>POC (買點):</span> <span style="color:#d29922">{res['poc']:.2f}</span></div>
-            <div class="row"><span>VAL (抄底):</span> <span style="color:#3fb950">{res['val']:.2f}</span></div>
+            <div class="row"><span>ATR 止盈:</span> <span style="color:{COLOR_ATR_STOP}">{res['stop_price']:.2f}</span></div>
+            <div class="row"><span>Sniper 止損:</span> <span style="color:{COLOR_SNIPER_STOP}">{res['sniper_stop']:.2f}</span></div>
+            <div class="row"><span>POC:</span> <span style="color:#d29922">{res['poc']:.2f}</span></div>
+            <div class="row"><span>VAL:</span> <span style="color:#3fb950">{res['val']:.2f}</span></div>
             <div class="row"><span>SMA200:</span> <span style="color:gray">{res['sma200']:.2f}</span></div>
             <hr style="border: 0; border-top: 1px dashed #30363d;">
             <div class="row"><span>狀態:</span> <span class="{res['color_class']}">{res['status_html']}</span></div>
@@ -317,53 +509,31 @@ for ticker in target_tickers:
         """
 
 s_qqq = market_signals.get('QQQ', 0)
-if s_qqq == 3: v_title, v_cls, v_msg = "🔫 狙擊時刻 (Sniper Mode)", "orange", "市場極度恐慌，執行 50% 資金抄底。"
-elif s_qqq == -3: v_title, v_cls, v_msg = "🛡️ 狙擊防守 (Hold)", "orange", "熊市反彈中，狙擊單請設好短期止損續抱。"
+if s_qqq == 3: v_title, v_cls, v_msg = "🔫 狙擊時刻 (Sniper)", "orange", "市場極度恐慌，建議 50% 資金進場。"
+elif s_qqq == -3: v_title, v_cls, v_msg = "🛡️ 狙擊防守 (Hold)", "orange", "熊市反彈中，狙擊單續抱。"
 elif s_qqq == -1: v_title, v_cls, v_msg = "🚨 熊市警報", "red", "跌破年線，全數清倉。"
 elif s_qqq == -2: v_title, v_cls, v_msg = "💰 獲利了結", "red", "跌破 ATR 止盈線，波段結束。"
 elif s_qqq == 1: v_title, v_cls, v_msg = "🎯 絕佳買點", "green", "回測 VAL 支撐，進場抄底。"
-elif s_qqq == 2: v_title, v_cls, v_msg = "🚀 趨勢續抱 (1x Leverage)", "purple", "建議持有 QQQ (1x)。"
+elif s_qqq == 2: v_title, v_cls, v_msg = "🚀 趨勢續抱", "purple", "建議持有 QQQ (1x)。"
 else: v_title, v_cls, v_msg = "⚖️ 震盪觀察", "yellow", "區間震盪，等待方向。"
 
-# ⏰ 智能維護鬧鐘 (整合年度與季度)
 now = datetime.datetime.now()
-maintenance_months = [1, 4, 7, 10]
-is_quarterly_time = (now.month in maintenance_months) and (now.day <= 7)
-is_annual_time = (now.month == 12) 
+m_months = [1, 4, 7, 10]
+if now.month == 12: m_class, m_msg = "m-alert", "🎯 <b>年度校準警報！</b> 請執行 <code>monitor_market_structure.py</code>。"
+elif (now.month in m_months) and (now.day <= 7): m_class, m_msg = "m-warning", "🔧 <b>季度健檢提醒：</b> 請執行 <code>scan_5d_quarterly.py</code>。"
+else: 
+    next_check = [m for m in m_months if m > now.month][0] if [m for m in m_months if m > now.month] else 1
+    m_class, m_msg = "m-normal", f"✅ 系統正常。<br>下季健檢：{next_check} 月 | 年度校準：12 月。"
 
-m_class = "m-normal"
-m_msg = "✅ 系統狀態正常。"
+html_index = get_html_header("Quant Dashboard - Signals", "signal") + \
+             f"<div style='text-align: center; margin-bottom: 20px; font-size: 0.9em; color: #8b949e;'>Final Gold | LB {lookback_days} / ATR {atr_mult}x</div>" + \
+             cards_html + f"<div class='verdict'><div class='verdict-title {v_cls}'>{v_title}</div><div style='margin-left: 20px;'>{v_msg}</div></div>" + \
+             get_html_footer(m_class, m_msg)
+with open("index.html", "w", encoding="utf-8") as f: f.write(html_index)
 
-if is_annual_time:
-    m_class = "m-alert"
-    m_msg = "🎯 <b>年度靶場校準警報！</b> 現在是 12 月，請務必執行 <code>monitor_market_structure.py</code> 檢查瞄準鏡是否失準。"
-    print("\n" + "!"*60)
-    print(f"🚨 系統維護警報 (Annual Calibration) 🚨")
-    print(f"   現在是 12 月，請檢查市場結構！")
-    print("   👉 python monitor_market_structure.py")
-    print("!"*60 + "\n")
-elif is_quarterly_time:
-    m_class = "m-warning"
-    m_msg = f"🔧 <b>季度健檢提醒：</b> 現在是 {now.month} 月初，請執行 <code>scan_5d_quarterly.py</code> 確認核心參數。"
-    print("\n" + "!"*60)
-    print(f"🔧 系統維護提醒 (Quarterly Maintenance)")
-    print("   👉 python scan_5d_quarterly.py")
-    print("!"*60 + "\n")
-else:
-    next_q = [m for m in maintenance_months if m > now.month]
-    next_check = next_q[0] if next_q else 1
-    m_msg = f"✅ 系統狀態正常。<br>下季健檢：{next_check} 月 | 年度校準：12 月。"
+# B. trades.html
+df_trades, df_eq = run_qqq_backtest()
+html_trades = get_html_header("Quant Dashboard - Trades", "trade") + generate_trades_html(df_trades, df_eq) + get_html_footer(m_class, m_msg)
+with open("trades.html", "w", encoding="utf-8") as f: f.write(html_trades)
 
-final_html = html_template.format(
-    lookback=lookback_days, bins=bins_count, va=va_pct, atr=atr_mult, panic=panic_mult,
-    rsi=sniper_rsi_threshold, bias=sniper_bias_threshold*100,
-    update_time=datetime.datetime.now(ZoneInfo("America/New_York")).strftime('%Y-%m-%d %H:%M'), 
-    content=f"{cards_html}<div class='verdict'><div class='verdict-title {v_cls}'>{v_title}</div><div style='margin-left: 20px;'>{v_msg}</div></div>",
-    m_class=m_class,
-    m_msg=m_msg
-)
-
-with open("index.html", "w", encoding="utf-8") as f:
-    f.write(final_html)
-
-print("✅ Main Dashboard Updated (Config Integrated & Logic Preserved).")
+print("✅ Main Dashboard Updated (Linked to Portfolio).")
