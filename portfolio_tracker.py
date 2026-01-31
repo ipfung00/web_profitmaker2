@@ -206,6 +206,7 @@ def generate_report(df_port, market_data):
             <a href="trades.html" class="nav-item">📊 模擬回測 (Backtest)</a>
             <a href="portfolio.html" class="nav-item active">💰 真實帳戶 (Portfolio)</a>
             <a href="structure.html" class="nav-item">🏗️ 市場結構 (Structure)</a>
+            <a href="structure_bottom.html" class="nav-item">📉 市場底部結構 (Bottoms)</a>
         </div>
         <div style="text-align:right; color:#8b949e; font-size:0.8em; margin-bottom:10px;">
             更新: {datetime.datetime.now(ZoneInfo("America/New_York")).strftime('%Y-%m-%d %H:%M')}

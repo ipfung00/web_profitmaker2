@@ -257,7 +257,10 @@ def generate_html(prices, d_chg, w_chg, m_chg):
     <body>
         <div class="nav">
             <a href="index.html" class="nav-item">🚀 策略訊號 (Signals)</a>
+            <a href="trades.html" class="nav-item">📊 模擬回測 (Backtest)</a>
+            <a href="portfolio.html" class="nav-item">💰 真實帳戶 (Portfolio)</a>
             <a href="structure.html" class="nav-item active">🏗️ 市場結構 (Structure)</a>
+            <a href="structure_bottom.html" class="nav-item">📉 市場底部結構 (Bottoms)</a>
         </div>
 
         <div class="update-time" style="text-align:right; color:#8b949e; font-size:0.8em; margin-bottom:10px;">

@@ -116,6 +116,7 @@ def get_html_header(title, active_tab):
         <a href="trades.html" class="nav-item {cls_trd}">📊 模擬回測 (Backtest)</a>
         <a href="portfolio.html" class="nav-item {cls_prt}">💰 真實帳戶 (Portfolio)</a>
         <a href="structure.html" class="nav-item {cls_str}">🏗️ 市場結構 (Structure)</a>
+        <a href="structure_bottom.html" class="nav-item">📉 市場底部結構 (Bottoms)</a>
     </div>
     <div class="update-time">最後更新 (美東時間): {datetime.datetime.now(ZoneInfo("America/New_York")).strftime('%Y-%m-%d %H:%M')}</div>
 """
