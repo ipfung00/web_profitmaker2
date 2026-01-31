@@ -51,9 +51,6 @@ COLOR_SNIPER_STOP = config.UI_COLORS['SNIPER_STOP']
 # 2. HTML 模板工具
 # ==========================================
 def get_html_header(title, active_tab):
-    """
-    active_tab: 'signal', 'trade', 'portfolio', 'structure'
-    """
     cls_sig = "active" if active_tab == "signal" else ""
     cls_trd = "active" if active_tab == "trade" else ""
     cls_prt = "active" if active_tab == "portfolio" else ""
@@ -89,7 +86,17 @@ def get_html_header(title, active_tab):
         .chart-img {{ max-width: 100%; height: auto; display: block; }}
         .tag {{ font-size: 0.8em; padding: 2px 6px; border-radius: 4px; border: 1px solid; }}
         
-        /* Table Styles */
+        /* 參數儀表板樣式 */
+        .param-box {{ 
+            display: flex; flex-wrap: wrap; gap: 15px; 
+            background-color: #21262d; border: 1px solid #30363d; border-radius: 6px; 
+            padding: 10px 15px; margin-bottom: 20px; font-size: 0.85em; color: #8b949e; justify-content: center;
+        }}
+        .param-group {{ display: flex; align-items: center; gap: 5px; }}
+        .param-label {{ font-weight: bold; color: #c9d1d9; }}
+        .param-val {{ color: #58a6ff; font-family: 'Consolas', monospace; }}
+        .divider {{ border-left: 1px solid #30363d; margin: 0 5px; }}
+        
         table {{ width: 100%; border-collapse: collapse; font-size: 0.9em; }}
         th, td {{ padding: 10px; text-align: left; border-bottom: 1px solid #30363d; }}
         th {{ color: #8b949e; }}
@@ -123,6 +130,22 @@ def get_html_footer(m_class, m_msg):
 </body>
 </html>
 """
+
+def get_config_html():
+    c = config.CORE_PARAMS
+    s = config.SNIPER_PARAMS
+    
+    return f"""
+    <div class="param-box">
+        <div class="param-group"><span class="param-label">👑 Core:</span> <span class="param-val">LB {c['LOOKBACK']}</span></div>
+        <div class="param-group"><span class="param-label">ATR:</span> <span class="param-val">{c['ATR_MULT']}x</span></div>
+        <div class="param-group"><span class="param-label">VP:</span> <span class="param-val">{c['BINS']} Bins / {int(c['VA_PCT']*100)}%</span></div>
+        <div class="divider"></div>
+        <div class="param-group"><span class="param-label">🔫 Sniper:</span> <span class="param-val">RSI < {s['RSI_THRESHOLD']}</span></div>
+        <div class="param-group"><span class="param-label">Bias:</span> <span class="param-val">< {int(s['BIAS_THRESHOLD']*100)}%</span></div>
+        <div class="param-group"><span class="param-label">Size:</span> <span class="param-val">{int(s['SIZE']*100)}%</span></div>
+    </div>
+    """
 
 # ==========================================
 # 3. 輔助函數
@@ -230,37 +253,48 @@ def calculate_data(ticker):
         short_term_high = df_daily['Close'].iloc[-sniper_stop_lookback:].max()
         sniper_stop = short_term_high - (atr_mult * atr)
         
+        # [v3.4 優化] 計算 ATR 止盈距離百分比 + 括號
+        atr_gap_pct = (current_price - stop_price) / current_price * 100
+        if atr_gap_pct < 0: gap_color = "#ff7b72"
+        elif atr_gap_pct < 1.5: gap_color = "#d29922"
+        else: gap_color = "#3fb950"
+        
         signal_code = 0
         action_html, status_html, color_class = "", "", ""
         
-        # --- 決策樹 ---
+        # --- 決策樹 (ATR 全域優先) ---
         if is_sniper_zone:
             signal_code = 3; color_class = "orange"; action_html = "🔫 狙擊手進場 (Sniper Buy)"
             status_html = f"RSI({rsi:.1f})<30 且 乖離({bias*100:.1f}%)<-11%。<br>建議投入 50% 資金。"
+        
         elif not is_bull_market:
             if current_price > sniper_stop:
                 signal_code = -3; color_class = "orange"; action_html = "🛡️ 狙擊單續抱 (Sniper Hold)"
-                status_html = f"價格 < SMA200，但位於短期止損 ({sniper_stop:.2f}) 之上。<br>狙擊單續抱，空手者觀望。"
+                status_html = f"價格 < SMA200，但位於短期止損 ({sniper_stop:.2f}) 之上。"
             else:
                 signal_code = -1; color_class = "red"; action_html = "▼ 清倉離場 (Bear Market)"
                 status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200:.2f})。"
+        
         elif is_panic:
             signal_code = 0; color_class = "yellow"; action_html = "⚠️ 恐慌觀望 (High Volatility)"
             status_html = f"今日震幅 > {panic_mult}x ATR。"
+            
         else:
             if current_price < val_price:
                 signal_code = 1; color_class = "green"; action_html = "★ 強力抄底 (Dip Buy)"
-                status_html = "價格回調至 VAL，勝率最高點。"
+                status_html = "價格回調至 VAL，勝率最高點 (Dip Buy)。"
+                
+            elif current_price < stop_price:
+                 signal_code = -2; color_class = "red"; action_html = "▼ 獲利了結 (ATR Stop)"
+                 status_html = f"跌破 ATR 止盈線 ({stop_price:.2f})，執行嚴格風控。"
+            
             elif current_price > poc_price:
-                if current_price < stop_price:
-                     signal_code = -2; color_class = "red"; action_html = "▼ 獲利了結 (Take Profit)"
-                     status_html = f"跌破 ATR 止盈線 ({stop_price:.2f})。"
-                else:
-                    signal_code = 2; color_class = "cyan"; action_html = "▲ 續抱/追勢 (Let Run)"
-                    status_html = f"ATR 止盈之上，建議 1x 倉位 (QQQ)。"
+                signal_code = 2; color_class = "cyan"; action_html = "▲ 續抱/追勢 (Let Run)"
+                status_html = f"位於強勢區間 (Price > POC)，趨勢向上。"
+            
             else:
                 signal_code = 0; color_class = "yellow"; action_html = "⚠️ 觀察 (Wait)"
-                status_html = f"位於震盪區間 (VAL < P < POC)。"
+                status_html = f"位於震盪區間 (VAL < P < POC)，但仍守住 ATR 線。"
 
         chart_base64 = generate_chart(df_daily, df_slice, sma200, poc_price, val_price, vah_price, bin_mids, vol_bin, stop_price, sniper_stop)
 
@@ -268,7 +302,9 @@ def calculate_data(ticker):
             'name': ticker_names[ticker], 'ticker': ticker, 'price': current_price,
             'poc': poc_price, 'val': val_price, 'sma200': sma200, 'stop_price': stop_price, 'sniper_stop': sniper_stop,
             'status_html': status_html, 'action_html': action_html, 'color_class': color_class,
-            'signal_code': signal_code, 'chart_base64': chart_base64
+            'signal_code': signal_code, 'chart_base64': chart_base64,
+            'atr_gap_pct': atr_gap_pct,
+            'gap_color': gap_color
         }
     except Exception as e:
         print(f"Error processing {ticker}: {e}")
@@ -294,7 +330,6 @@ def run_qqq_backtest():
     
     roll_max_sniper = df['Close'].rolling(window=sniper_stop_lookback).max().shift(1).fillna(0).values
     
-    # Numpy 加速
     highs = df['High'].values
     lows = df['Low'].values
     closes = df['Close'].values
@@ -349,7 +384,7 @@ def run_qqq_backtest():
             else: low -= 1; curr_v += v_d
         val_price = bin_mids[low]
         
-        # Trading
+        # Trading Logic (v3.0)
         if not in_pos:
             if (curr_rsi < sniper_rsi_threshold) and (curr_bias < sniper_bias_threshold):
                 invest_amt = balance * sniper_size
@@ -379,8 +414,12 @@ def run_qqq_backtest():
                 if curr_close < stop_price: should_sell, sell_reason = True, "Sniper Stop"
             else:
                 stop_price = highest_close - (atr_mult * curr_atr)
-                if curr_close < curr_sma: should_sell, sell_reason = True, "Bear Market"
-                elif curr_close < stop_price: should_sell, sell_reason = True, "ATR Stop"
+                
+                # ATR Priority Check
+                if curr_close < curr_sma: 
+                    should_sell, sell_reason = True, "Bear Market"
+                elif curr_close < stop_price: 
+                    should_sell, sell_reason = True, "ATR Stop"
             
             if should_sell:
                 balance += position * curr_close
@@ -410,7 +449,6 @@ def run_qqq_backtest():
     return pd.DataFrame(trade_log), pd.DataFrame(equity_curve).set_index('Date')
 
 def generate_trades_html(df_trades, df_eq):
-    # 1. YTD
     current_year = datetime.datetime.now().year
     df_ytd = df_eq[df_eq.index.year == current_year].copy()
     if df_ytd.empty: df_ytd = df_eq.iloc[-250:]
@@ -430,9 +468,7 @@ def generate_trades_html(df_trades, df_eq):
         ax.legend(fontsize=10, facecolor='#161b22', edgecolor='#30363d', labelcolor='white')
         ax.grid(True, color='#30363d', linestyle=':', alpha=0.5)
         
-        # [修改] 優化 X 軸日期顯示 (年-月-日)
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-        # 讓日期標籤旋轉，避免重疊
         plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
         ax.tick_params(axis='x', colors='#8b949e')
         ax.tick_params(axis='y', colors='#8b949e')
@@ -445,7 +481,6 @@ def generate_trades_html(df_trades, df_eq):
     else:
         chart_b64 = ""
 
-    # 2. Table
     recent_trades = df_trades.tail(50).iloc[::-1]
     table_rows = ""
     for _, row in recent_trades.iterrows():
@@ -455,7 +490,6 @@ def generate_trades_html(df_trades, df_eq):
         entry_d = row['Entry Date'].strftime('%Y-%m-%d')
         exit_d = row['Exit Date'].strftime('%Y-%m-%d') if pd.notnull(row['Exit Date']) else "HOLDING"
         reason = row['Reason'] if row['Reason'] != 'OPEN' else '<span class="m-warning">HOLDING</span>'
-        
         buy_color = config.UI_COLORS['BUY_SNIPER'] if row['Type']=='Sniper' else config.UI_COLORS['BUY_CORE']
         
         table_rows += f"""
@@ -503,7 +537,13 @@ for ticker in target_tickers:
         <div class="card">
             {header}
             <div class="row"><span>現價:</span> <span>{res['price']:.2f}</span></div>
-            <div class="row"><span>ATR 止盈:</span> <span style="color:{COLOR_ATR_STOP}">{res['stop_price']:.2f}</span></div>
+            <div class="row">
+                <span>ATR 止盈:</span> 
+                <span>
+                    <span style="color:{res['gap_color']}; font-size:0.9em; margin-right:5px;">[{res['atr_gap_pct']:+.2f}%]</span>
+                    <span style="color:{COLOR_ATR_STOP}">{res['stop_price']:.2f}</span> 
+                </span>
+            </div>
             <div class="row"><span>Sniper 止損:</span> <span style="color:{COLOR_SNIPER_STOP}">{res['sniper_stop']:.2f}</span></div>
             <div class="row"><span>POC:</span> <span style="color:#d29922">{res['poc']:.2f}</span></div>
             <div class="row"><span>VAL:</span> <span style="color:#3fb950">{res['val']:.2f}</span></div>
@@ -533,7 +573,7 @@ else:
     m_class, m_msg = "m-normal", f"✅ 系統正常。<br>下季健檢：{next_check} 月 | 年度校準：12 月。"
 
 html_index = get_html_header("Quant Dashboard - Signals", "signal") + \
-             f"<div style='text-align: center; margin-bottom: 20px; font-size: 0.9em; color: #8b949e;'>Final Gold | LB {lookback_days} / ATR {atr_mult}x</div>" + \
+             get_config_html() + \
              cards_html + f"<div class='verdict'><div class='verdict-title {v_cls}'>{v_title}</div><div style='margin-left: 20px;'>{v_msg}</div></div>" + \
              get_html_footer(m_class, m_msg)
 with open("index.html", "w", encoding="utf-8") as f: f.write(html_index)
@@ -543,4 +583,4 @@ df_trades, df_eq = run_qqq_backtest()
 html_trades = get_html_header("Quant Dashboard - Trades", "trade") + generate_trades_html(df_trades, df_eq) + get_html_footer(m_class, m_msg)
 with open("trades.html", "w", encoding="utf-8") as f: f.write(html_trades)
 
-print("✅ Main Dashboard Updated (Linked to Portfolio).")
+print("✅ Main Dashboard Updated (v3.4 - UI Final Polish).")

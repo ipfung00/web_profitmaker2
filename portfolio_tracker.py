@@ -51,11 +51,15 @@ def load_ledger():
 
 def calculate_portfolio(df_trades):
     if df_trades is None or df_trades.empty: return None, None
+    
     start_date = df_trades['Date'].min()
     end_date = datetime.datetime.now()
     
-    print(f"📥 下載市場數據 ({start_date.date()} ~ Now)...")
-    market_data = yf.download(BENCHMARK, start=start_date, progress=False)['Close']
+    # [修復 BUG] 多抓前 7 天數據，防止起始日是假日導致 benchmark 為 NaN
+    fetch_start = start_date - datetime.timedelta(days=7)
+    
+    print(f"📥 下載市場數據 ({fetch_start.date()} ~ Now)...")
+    market_data = yf.download(BENCHMARK, start=fetch_start, progress=False)['Close']
     if isinstance(market_data, pd.DataFrame): market_data = market_data.iloc[:, 0]
     
     dates = pd.date_range(start_date, end_date, freq='D')
@@ -87,20 +91,34 @@ def calculate_portfolio(df_trades):
             trade_idx += 1
             
         try:
+            # 獲取股價 (如果假日則找最近的前一天)
             price = market_data.asof(d)
             if pd.isna(price): price = 0
         except: price = 0
             
         equity = cash + (shares * price)
+        
+        # 計算報酬率
         ret = (equity - total_invested) / total_invested * 100 if total_invested > 0 else 0.0
         
-        portfolio_history.append({'Date': d, 'Equity': equity, 'Return': ret})
+        portfolio_history.append({
+            'Date': d, 
+            'Equity': equity, 
+            'Return': ret,
+            'Invested': total_invested # [新增] 紀錄總投入，以便計算損益金額
+        })
         
     return pd.DataFrame(portfolio_history).set_index('Date'), market_data
 
 def generate_report(df_port, market_data):
-    # Benchmark
+    # Benchmark 計算 (修復 NaN 問題)
+    # 找到 portfolio 第一天對應的市場價格 (asof 會自動找前一個有效交易日)
     start_price = market_data.asof(df_port.index[0])
+    
+    if pd.isna(start_price) or start_price == 0:
+        # 如果真的抓不到 (極端情況)，用第一筆有效數據代替
+        start_price = market_data.iloc[0]
+        
     qqq_ret = (market_data - start_price) / start_price * 100
     df_port['QQQ_Return'] = qqq_ret.reindex(df_port.index, method='ffill')
     
@@ -122,7 +140,7 @@ def generate_report(df_port, market_data):
     ax.legend(fontsize=10, facecolor='#161b22', edgecolor='#30363d', labelcolor='white')
     ax.grid(True, color='#30363d', linestyle=':', alpha=0.5)
     
-    # [修改] 優化 X 軸日期顯示 (年-月-日) + 旋轉 45 度
+    # X 軸日期優化
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
     plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
     ax.tick_params(colors='#8b949e')
@@ -133,13 +151,22 @@ def generate_report(df_port, market_data):
     buf.seek(0)
     chart_b64 = base64.b64encode(buf.read()).decode('utf-8')
     
-    # HTML Generation
+    # HTML Stats Calculation
     cur_eq = df_port['Equity'].iloc[-1]
     cur_ret = df_port['Return'].iloc[-1]
     cur_qqq = df_port['QQQ_Return'].iloc[-1]
+    cur_invested = df_port['Invested'].iloc[-1]
+    
+    # [新增] 計算實際損益金額
+    pnl_amount = cur_eq - cur_invested
+    pnl_sign = "+" if pnl_amount >= 0 else "-"
+    pnl_color = "green" if pnl_amount >= 0 else "red"
+    pnl_str = f"({pnl_sign}${abs(pnl_amount):,.0f})"
+    
     diff = cur_ret - cur_qqq
     diff_cls = "green" if diff > 0 else "red"
     
+    # Ledger Table
     df_ledger = pd.read_csv(LEDGER_FILE)
     df_ledger.dropna(how='all', inplace=True)
     df_ledger.dropna(subset=['Date', 'Action'], inplace=True)
@@ -163,6 +190,7 @@ def generate_report(df_port, market_data):
             .stat-box {{ display: flex; justify-content: space-around; text-align: center; margin-bottom: 20px; }}
             .stat-val {{ font-size: 1.5em; font-weight: bold; margin-top: 5px; }}
             .green {{ color: #3fb950; }} .red {{ color: #ff7b72; }} .gray {{ color: #8b949e; }} .text-white {{ color: #c9d1d9; }}
+            .pnl-amt {{ font-size: 0.6em; margin-left: 5px; opacity: 0.8; vertical-align: middle; }}
             
             table {{ width: 100%; border-collapse: collapse; font-size: 0.9em; }}
             th, td {{ padding: 10px; text-align: left; border-bottom: 1px solid #30363d; }}
@@ -184,7 +212,12 @@ def generate_report(df_port, market_data):
         <div class="card">
             <div class="stat-box">
                 <div><div class="gray">總淨值</div><div class="stat-val text-white">${cur_eq:,.0f}</div></div>
-                <div><div class="gray">我的報酬</div><div class="stat-val {diff_cls}">{cur_ret:+.2f}%</div></div>
+                <div>
+                    <div class="gray">我的報酬</div>
+                    <div class="stat-val {diff_cls}">
+                        {cur_ret:+.2f}%<span class="pnl-amt {pnl_color}">{pnl_str}</span>
+                    </div>
+                </div>
                 <div><div class="gray">QQQ 報酬</div><div class="stat-val gray">{cur_qqq:+.2f}%</div></div>
                 <div><div class="gray">Alpha</div><div class="stat-val {diff_cls}">{diff:+.2f}%</div></div>
             </div>
@@ -203,7 +236,7 @@ def generate_report(df_port, market_data):
     print(f"✅ 真實帳戶報告已生成: {OUTPUT_HTML}")
 
 if __name__ == "__main__":
-    print("💰 啟動真實帳戶追蹤器...")
+    print("💰 啟動真實帳戶追蹤器 (v3.0 - PnL Fixed)...")
     df_t = load_ledger()
     if df_t is not None:
         df_p, m_data = calculate_portfolio(df_t)
