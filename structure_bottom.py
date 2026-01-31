@@ -29,7 +29,7 @@ import config  # <--- 引入配置檔
 # ==========================================
 OUTPUT_FILE = "structure_bottom.html"  # <--- 新的網頁檔名
 TICKER = config.TICKER
-LOOKBACK_YEARS = 15
+LOOKBACK_YEARS = 5
 
 # UI 顏色
 plt.style.use('dark_background')
