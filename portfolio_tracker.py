@@ -1,5 +1,4 @@
 import matplotlib
-# [關鍵] 必須在 import pyplot 之前設定 Agg 模式
 matplotlib.use('Agg') 
 
 import pandas as pd
@@ -12,7 +11,7 @@ import io
 import base64
 import datetime
 from zoneinfo import ZoneInfo
-import config  # <--- 引入配置檔
+import config
 
 # ==========================================
 # 設定
@@ -21,7 +20,6 @@ LEDGER_FILE = 'real_trades.csv'
 BENCHMARK = 'QQQ'
 OUTPUT_HTML = 'portfolio.html'
 
-# UI 風格 (從 config 讀取)
 plt.style.use('dark_background')
 COLOR_MY_EQ = config.UI_COLORS.get('STRAT_LINE', '#00ff00') 
 COLOR_BENCH = config.UI_COLORS.get('BH_LINE', '#808080')
@@ -34,10 +32,7 @@ def load_ledger():
         print(f"❌ 找不到帳本: {LEDGER_FILE}")
         return None
     
-    # 讀取 CSV
     df = pd.read_csv(LEDGER_FILE)
-    
-    # 自動清洗數據：刪除空行
     df.dropna(how='all', inplace=True)
     df.dropna(subset=['Date', 'Action'], inplace=True)
     
@@ -55,14 +50,21 @@ def calculate_portfolio(df_trades):
     start_date = df_trades['Date'].min()
     end_date = datetime.datetime.now()
     
-    # [修復 BUG] 多抓前 7 天數據，防止起始日是假日導致 benchmark 為 NaN
+    # 多抓前 7 天數據，防止起始日是假日
     fetch_start = start_date - datetime.timedelta(days=7)
     
     print(f"📥 下載市場數據 ({fetch_start.date()} ~ Now)...")
     market_data = yf.download(BENCHMARK, start=fetch_start, progress=False)['Close']
     if isinstance(market_data, pd.DataFrame): market_data = market_data.iloc[:, 0]
     
-    dates = pd.date_range(start_date, end_date, freq='D')
+    # [修改核心] 不再使用 pd.date_range(freq='D')
+    # 改為直接使用市場數據的 Index (純交易日)
+    # 並過濾出 >= start_date 的部分
+    trading_days = market_data.index[market_data.index >= start_date]
+    
+    # 如果今天剛好是假日(例如週六)，trading_days 可能只到週五
+    # 這是正確的，因為週六沒有淨值變化
+    
     portfolio_history = []
     
     cash = 0.0
@@ -70,12 +72,15 @@ def calculate_portfolio(df_trades):
     total_invested = 0.0
     trade_idx = 0
     
-    # 強制轉型防止錯誤
+    # 強制轉型
     df_trades['Price'] = pd.to_numeric(df_trades['Price'], errors='coerce').fillna(0)
     df_trades['Shares'] = pd.to_numeric(df_trades['Shares'], errors='coerce').fillna(0)
     df_trades['Fee'] = pd.to_numeric(df_trades['Fee'], errors='coerce').fillna(0)
     
-    for d in dates:
+    for d in trading_days:
+        # 處理當日(含)之前的所有交易
+        # 注意：如果有一筆交易發生在週六(非交易日)，它會等到下一個週一(交易日)才被計算進來
+        # 這是合理的，因為週六本來就不能交易
         while trade_idx < len(df_trades) and df_trades.iloc[trade_idx]['Date'] <= d:
             t = df_trades.iloc[trade_idx]
             
@@ -91,32 +96,27 @@ def calculate_portfolio(df_trades):
             trade_idx += 1
             
         try:
-            # 獲取股價 (如果假日則找最近的前一天)
-            price = market_data.asof(d)
-            if pd.isna(price): price = 0
-        except: price = 0
+            # 直接取當天股價 (一定是交易日，所以不用 asof 猜測)
+            price = market_data.loc[d]
+        except: 
+            price = 0
             
         equity = cash + (shares * price)
-        
-        # 計算報酬率
         ret = (equity - total_invested) / total_invested * 100 if total_invested > 0 else 0.0
         
         portfolio_history.append({
             'Date': d, 
             'Equity': equity, 
             'Return': ret,
-            'Invested': total_invested # [新增] 紀錄總投入，以便計算損益金額
+            'Invested': total_invested
         })
         
     return pd.DataFrame(portfolio_history).set_index('Date'), market_data
 
 def generate_report(df_port, market_data):
-    # Benchmark 計算 (修復 NaN 問題)
-    # 找到 portfolio 第一天對應的市場價格 (asof 會自動找前一個有效交易日)
+    # Benchmark 計算
     start_price = market_data.asof(df_port.index[0])
-    
     if pd.isna(start_price) or start_price == 0:
-        # 如果真的抓不到 (極端情況)，用第一筆有效數據代替
         start_price = market_data.iloc[0]
         
     qqq_ret = (market_data - start_price) / start_price * 100
@@ -140,7 +140,6 @@ def generate_report(df_port, market_data):
     ax.legend(fontsize=10, facecolor='#161b22', edgecolor='#30363d', labelcolor='white')
     ax.grid(True, color='#30363d', linestyle=':', alpha=0.5)
     
-    # X 軸日期優化
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
     plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
     ax.tick_params(colors='#8b949e')
@@ -151,13 +150,16 @@ def generate_report(df_port, market_data):
     buf.seek(0)
     chart_b64 = base64.b64encode(buf.read()).decode('utf-8')
     
-    # HTML Stats Calculation
-    cur_eq = df_port['Equity'].iloc[-1]
-    cur_ret = df_port['Return'].iloc[-1]
-    cur_qqq = df_port['QQQ_Return'].iloc[-1]
-    cur_invested = df_port['Invested'].iloc[-1]
+    # HTML Stats
+    if not df_port.empty:
+        cur_eq = df_port['Equity'].iloc[-1]
+        cur_ret = df_port['Return'].iloc[-1]
+        cur_qqq = df_port['QQQ_Return'].iloc[-1]
+        cur_invested = df_port['Invested'].iloc[-1]
+    else:
+        cur_eq, cur_ret, cur_qqq, cur_invested = 0, 0, 0, 0
     
-    # [新增] 計算實際損益金額
+    # 損益金額計算
     pnl_amount = cur_eq - cur_invested
     pnl_sign = "+" if pnl_amount >= 0 else "-"
     pnl_color = "green" if pnl_amount >= 0 else "red"
@@ -236,7 +238,7 @@ def generate_report(df_port, market_data):
     print(f"✅ 真實帳戶報告已生成: {OUTPUT_HTML}")
 
 if __name__ == "__main__":
-    print("💰 啟動真實帳戶追蹤器 (v3.0 - PnL Fixed)...")
+    print("💰 啟動真實帳戶追蹤器 (v3.1 - Trading Days Only)...")
     df_t = load_ledger()
     if df_t is not None:
         df_p, m_data = calculate_portfolio(df_t)
