@@ -1,5 +1,5 @@
 import matplotlib
-matplotlib.use('Agg') # 非互動模式，防止伺服器報錯
+matplotlib.use('Agg') # 非互動模式
 
 import os
 import sys
@@ -18,26 +18,20 @@ import base64
 # 路徑修正 & Config 讀取
 # ==========================================
 current_dir = os.path.dirname(os.path.abspath(__file__))
-# 如果 config 在上一層，請取消註解下面兩行
-# parent_dir = os.path.dirname(current_dir)
-# sys.path.append(parent_dir)
-
 import config  # <--- 引入配置檔
 
 # ==========================================
 # 0. 設定
 # ==========================================
-OUTPUT_FILE = "structure_bottom.html"  # <--- 新的網頁檔名
+OUTPUT_FILE = "structure_bottom.html"
 TICKER = config.TICKER
 LOOKBACK_YEARS = 5
 
-# UI 顏色
 plt.style.use('dark_background')
 COLOR_TEXT = '#c9d1d9'
 COLOR_BG = '#0d1117'
 COLOR_CARD = '#161b22'
 
-# 從 Config 讀取目前的「瞄準鏡」設定
 Current_Sniper_RSI = config.SNIPER_PARAMS['RSI_THRESHOLD']
 Current_Sniper_Bias = config.SNIPER_PARAMS['BIAS_THRESHOLD']
 
@@ -52,7 +46,7 @@ def calculate_rsi(data, window=14):
     return 100 - (100 / (1 + rs))
 
 # ==========================================
-# 2. 核心分析邏輯 (保留你原本的 Logic)
+# 2. 核心分析邏輯
 # ==========================================
 def analyze_structure():
     print(f"🔍 正在分析 {TICKER} 過去 {LOOKBACK_YEARS} 年的市場底部結構...")
@@ -66,12 +60,11 @@ def analyze_structure():
     df['RSI'] = calculate_rsi(df['Close'], 14)
     df['Bias'] = (df['Close'] - df['SMA200']) / df['SMA200']
     
-    # 找出顯著的波段低點 (Local Minima)
-    # 使用 argrelextrema 找出左右 20 天內的最低點 (這是你原本的邏輯)
+    # 找出顯著的波段低點
     n = 20 
     df['Min'] = df.iloc[argrelextrema(df['Close'].values, np.less_equal, order=n)[0]]['Close']
     
-    # 篩選出顯著低點 (跌破 SMA200 且 發生在局部低點)
+    # 篩選出顯著低點
     deep_bottoms = df[(df['Min'] > 0) & (df['Close'] < df['SMA200'])].copy()
     
     return df, deep_bottoms
@@ -86,8 +79,6 @@ def generate_structure_chart(df, bottoms):
     ax1.set_facecolor(COLOR_CARD)
     ax1.plot(df.index, df['Close'], color='white', linewidth=1, label='Price')
     ax1.plot(df.index, df['SMA200'], color='gray', linestyle='--', linewidth=1, label='SMA200')
-    
-    # 標記底部
     ax1.scatter(bottoms.index, bottoms['Close'], color='#f0883e', s=50, zorder=5, label='Bear Bottoms')
     
     ax1.set_title(f"{TICKER} Market Bottom Structure (Last {LOOKBACK_YEARS} Years)", color=COLOR_TEXT, fontsize=14)
@@ -99,7 +90,7 @@ def generate_structure_chart(df, bottoms):
     ax2.set_facecolor(COLOR_CARD)
     ax2.plot(df.index, df['RSI'], color='#58a6ff', linewidth=1)
     ax2.axhline(30, color='red', linestyle='--', linewidth=0.8)
-    ax2.axhline(Current_Sniper_RSI, color='#f0883e', linestyle=':', linewidth=1, label=f'Current Threshold ({Current_Sniper_RSI})')
+    ax2.axhline(Current_Sniper_RSI, color='#f0883e', linestyle=':', linewidth=1, label=f'Threshold ({Current_Sniper_RSI})')
     ax2.set_ylabel("RSI", color=COLOR_TEXT)
     ax2.set_ylim(10, 80)
     ax2.grid(True, color='#30363d', linestyle=':', alpha=0.5)
@@ -119,11 +110,10 @@ def generate_structure_chart(df, bottoms):
     return base64.b64encode(buf.read()).decode('utf-8')
 
 # ==========================================
-# 4. HTML 生成
+# 4. HTML 生成 (修正版)
 # ==========================================
 def generate_html(df, bottoms, chart_b64):
     
-    # 統計數據
     rsi_vals = []
     bias_vals = []
     missed_count = 0
@@ -155,10 +145,9 @@ def generate_html(df, bottoms, chart_b64):
     avg_bias = np.mean(bias_vals) if bias_vals else 0
     miss_rate = (missed_count / len(bottoms) * 100) if not bottoms.empty else 0
     
-    # 診斷訊息
     if avg_rsi > Current_Sniper_RSI:
         diag_color = "red"
-        diag_msg = f"⚠️ 警告: 平均底部 RSI ({avg_rsi:.1f}) 高於設定值 ({Current_Sniper_RSI})，可能導致錯過進場機會。"
+        diag_msg = f"⚠️ 警告: 平均底部 RSI ({avg_rsi:.1f}) 高於設定值 ({Current_Sniper_RSI})。"
     elif miss_rate > 50:
         diag_color = "red"
         diag_msg = f"❌ 嚴重: 錯失率高達 {miss_rate:.0f}%，請放寬 Sniper 條件。"
@@ -166,7 +155,14 @@ def generate_html(df, bottoms, chart_b64):
         diag_color = "green"
         diag_msg = "✅ 健康: 目前參數能有效捕捉大部分歷史底部。"
 
-    # [新分頁] 導航列：新增了「市場底部結構」
+    # [修正點] 將 CSS 獨立出來，避免 f-string 解析錯誤
+    nav_css = """
+        .nav { display: flex; border-bottom: 1px solid #30363d; margin-bottom: 20px; flex-wrap: wrap; }
+        .nav-item { padding: 10px 20px; text-decoration: none; color: #8b949e; font-weight: bold; cursor: pointer; }
+        .nav-item:hover { color: #c9d1d9; background-color: #161b22; }
+        .nav-item.active { color: #58a6ff; border-bottom: 2px solid #58a6ff; }
+    """
+
     nav_html = """
     <div class="nav">
         <a href="index.html" class="nav-item">🚀 策略訊號 (Signals)</a>
@@ -185,12 +181,7 @@ def generate_html(df, bottoms, chart_b64):
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
             body {{ background-color: #0d1117; color: #c9d1d9; font-family: 'Microsoft JhengHei', sans-serif; padding: 20px; margin: 0; }}
-            {"""
-            .nav { display: flex; border-bottom: 1px solid #30363d; margin-bottom: 20px; flex-wrap: wrap; }
-            .nav-item { padding: 10px 20px; text-decoration: none; color: #8b949e; font-weight: bold; cursor: pointer; }
-            .nav-item:hover { color: #c9d1d9; background-color: #161b22; }
-            .nav-item.active { color: #58a6ff; border-bottom: 2px solid #58a6ff; }
-            """}
+            {nav_css}
             .card {{ background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 15px; margin-bottom: 20px; }}
             .header {{ font-size: 1.2em; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #30363d; padding-bottom: 5px; }}
             
