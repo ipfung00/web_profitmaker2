@@ -5,7 +5,7 @@ on:
     - cron: '0 0 * * *' # 每天 UTC 00:00 (台灣早上 08:00) 執行
   workflow_dispatch:      # 允許手動點擊按鈕觸發
 
-# 👇 [修復關鍵] 給予 Action 寫入倉庫的權限，否則 git push 會失敗
+# 給予 Action 寫入倉庫的權限
 permissions:
   contents: write
 
@@ -23,13 +23,11 @@ jobs:
         python-version: '3.9'
 
     - name: Install dependencies
-      # 👇 確保這裡包含了所有腳本需要的套件 (scipy 是 structure.py 需要的)
       run: |
         python -m pip install --upgrade pip
         pip install yfinance pandas matplotlib mplfinance scipy
 
     - name: Run analysis scripts
-      # 👇 確保這四個檔案都已經存在於你的 GitHub 倉庫中，否則會報錯
       run: |
         python main.py
         python portfolio_tracker.py
@@ -37,10 +35,10 @@ jobs:
         python structure_bottom.py
 
     - name: Commit and push changes
-      # 如果沒有變更 (例如假日股市沒開)，這一步會安全跳過 (|| exit 0)
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add *.html *.png
+        # 👇 [修正] 移除了 *.png，因為我們沒有產生圖片檔
+        git add *.html
         git commit -m "Daily update: $(date +'%Y-%m-%d')" || exit 0
         git push
