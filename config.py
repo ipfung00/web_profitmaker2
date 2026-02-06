@@ -23,7 +23,7 @@ CORE_PARAMS = {
 SNIPER_PARAMS = {
     'RSI_THRESHOLD': 30,       # 狙擊進場 RSI < 30
     'BIAS_THRESHOLD': -0.11,   # 狙擊進場 乖離率 < -11%
-    'SIZE': 0.5,               # 狙擊倉位佔比 (0.5 = 50%)
+    'SIZE': 1,               # 狙擊倉位佔比 (0.5 = 50%)
     'STOP_LOOKBACK': 14        # 狙擊出場 回溯天數 (14天)
 }
 
