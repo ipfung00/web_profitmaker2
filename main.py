@@ -226,12 +226,20 @@ def calculate_data(ticker, backtest_status=None):
         is_bull_market = current_price > sma200
         is_sniper_zone = (rsi < sniper_rsi_threshold) and (bias < sniper_bias_threshold)
         
-        df_slice = df_daily.iloc[-lookback_days:].copy()
-        p_slice = (df_slice['High'] + df_slice['Low'] + df_slice['Close']) / 3
-        v_slice = df_slice['Volume']
+        # [v3.8 FIX: 嚴格同步 Backtest，計算 VAL 時排除今日數據]
+        # 1. 繪圖用的 Slice (包含今日，為了畫 K 線)
+        df_chart = df_daily.iloc[-lookback_days:].copy()
         
-        range_min = df_slice['Low'].min()
-        range_max = df_slice['High'].max()
+        # 2. 計算指標用的 Slice (排除今日，為了對齊 Backtest 邏輯)
+        # 取 "昨天" 往回推 lookback 天
+        df_calc = df_daily.iloc[-lookback_days-1 : -1].copy() 
+        
+        # 使用 df_calc (昨日標準) 來計算籌碼分佈
+        p_slice = (df_calc['High'] + df_calc['Low'] + df_calc['Close']) / 3
+        v_slice = df_calc['Volume']
+        
+        range_min = df_calc['Low'].min()
+        range_max = df_calc['High'].max()
         vol_bin, bin_edges = np.histogram(p_slice, bins=bins_count, range=(range_min, range_max), weights=v_slice)
         poc_idx = np.argmax(vol_bin)
         bin_mids = (bin_edges[:-1] + bin_edges[1:]) / 2
@@ -250,7 +258,7 @@ def calculate_data(ticker, backtest_status=None):
         val_price = bin_mids[low]
         vah_price = bin_mids[up]
         
-        recent_highest_close = df_slice['Close'].max()
+        recent_highest_close = df_chart['Close'].max()
         stop_price = recent_highest_close - (atr_mult * atr)
         
         short_term_high = df_daily['Close'].iloc[-sniper_stop_lookback:].max()
@@ -323,7 +331,7 @@ def calculate_data(ticker, backtest_status=None):
         elif atr_gap_pct < 1.5: gap_color = "#d29922"
         else: gap_color = "#3fb950"
 
-        chart_base64 = generate_chart(df_daily, df_slice, sma200, poc_price, val_price, vah_price, bin_mids, vol_bin, stop_price, sniper_stop)
+        chart_base64 = generate_chart(df_daily, df_chart, sma200, poc_price, val_price, vah_price, bin_mids, vol_bin, stop_price, sniper_stop)
 
         return {
             'name': ticker_names[ticker], 'ticker': ticker, 'price': current_price,
@@ -394,11 +402,13 @@ def run_qqq_backtest():
         curr_rsi = rsis[i]
         curr_bias = biases[i]
         
-        # [v3.9] Sync with Signals: Include today's data (i) in VP calculation
-        p_slice = tps[i-lookback_days+1 : i+1]
-        v_slice = volumes[i-lookback_days+1 : i+1]
-        range_min = np.min(lows[i-lookback_days+1 : i+1])
-        range_max = np.max(highs[i-lookback_days+1 : i+1])
+        # [v3.8] Strict Mode (Back to Original): Exclude today's data (i)
+        # VP 計算範圍: [i - lookback : i]
+        # 效果: Signals 頁面可能比 Backtest 快一天 (這是正常的濾網)
+        p_slice = tps[i-lookback_days : i]
+        v_slice = volumes[i-lookback_days : i]
+        range_min = np.min(lows[i-lookback_days : i])
+        range_max = np.max(highs[i-lookback_days : i])
 
         vol_bin, bin_edges = np.histogram(p_slice, bins=bins_count, range=(range_min, range_max), weights=v_slice)
         poc_idx = np.argmax(vol_bin)
@@ -620,5 +630,5 @@ with open("index.html", "w", encoding="utf-8") as f: f.write(html_index)
 html_trades = get_html_header("Quant Dashboard - Trades", "trade") + generate_trades_html(df_trades, df_eq) + get_html_footer(m_class, m_msg)
 with open("trades.html", "w", encoding="utf-8") as f: f.write(html_trades)
 
-print(f"✅ Main Dashboard Updated (v3.9 - Immediate Sync Backtest).")
+print(f"✅ Main Dashboard Updated (v3.8 Strict - Reverted).")
 print(f"   目前狀態: {'FISHING (狙擊)' if qqq_status['is_fishing'] else 'CORE (正規)' if qqq_status['in_pos'] else 'EMPTY (空手)'}")
