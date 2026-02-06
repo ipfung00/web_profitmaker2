@@ -46,6 +46,8 @@ sniper_stop_lookback = config.SNIPER_PARAMS['STOP_LOOKBACK']
 # 🎨 UI 顏色設定
 COLOR_ATR_STOP = config.UI_COLORS['ATR_STOP']
 COLOR_SNIPER_STOP = config.UI_COLORS['SNIPER_STOP']
+COLOR_BUY_CORE = config.UI_COLORS['BUY_CORE']
+COLOR_BUY_SNIPER = config.UI_COLORS['BUY_SNIPER']
 
 # ==========================================
 # 2. HTML 模板工具
@@ -203,7 +205,7 @@ def generate_chart(df_daily, lookback_slice, sma200_val, poc_price, val_price, v
     plt.close(fig)
     return img_base64
 
-def calculate_data(ticker):
+def calculate_data(ticker, backtest_status=None):
     try:
         df_daily = yf.download(ticker, period="3y", interval="1d", progress=False)
         if isinstance(df_daily.columns, pd.MultiIndex): df_daily.columns = df_daily.columns.get_level_values(0)
@@ -254,48 +256,72 @@ def calculate_data(ticker):
         short_term_high = df_daily['Close'].iloc[-sniper_stop_lookback:].max()
         sniper_stop = short_term_high - (atr_mult * atr)
         
+        # [v3.7 UI FIX] 邏輯同步保留，但移除 Badge
+        # 預設值
+        active_stop_price = stop_price 
+        active_stop_label = "ATR 止盈"
+        stop_color_css = COLOR_ATR_STOP
+        signal_code = 0
+        action_html, status_html, color_class = "", "", ""
+
+        # 1. 優先使用回測傳來的真實狀態 (如果有)
+        if backtest_status and backtest_status['in_pos']:
+            if backtest_status['is_fishing']:
+                # 確實是 Sniper Mode
+                active_stop_price = sniper_stop
+                active_stop_label = "Sniper 止損"
+                stop_color_css = COLOR_SNIPER_STOP
+                signal_code = -3 
+                color_class = "orange"; action_html = "🛡️ 狙擊單續抱 (Sniper Hold)"
+                status_html = f"狀態同步: 狙擊中。止損參考近 {sniper_stop_lookback} 日高點。"
+            else:
+                # 確實是 Core Mode
+                active_stop_price = stop_price
+                active_stop_label = "ATR 止盈"
+                stop_color_css = COLOR_ATR_STOP
+                signal_code = 2 
+                color_class = "purple"; action_html = "🚀 趨勢續抱 (Core Hold)"
+                status_html = f"狀態同步: 趨勢中。止損參考歷史高點。"
+        else:
+            # 2. 如果沒有持倉，則顯示建議訊號 (Signal Logic)
+            if is_sniper_zone:
+                signal_code = 3; color_class = "orange"; action_html = "🔫 狙擊手進場 (Sniper Buy)"
+                status_html = f"RSI({rsi:.1f})<30 且 乖離({bias*100:.1f}%)<-11%。<br>建議投入 50% 資金。"
+            
+            elif not is_bull_market:
+                if current_price > sniper_stop:
+                    signal_code = -3; color_class = "orange"; action_html = "🛡️ 狙擊單續抱 (Sniper Hold)"
+                    status_html = f"價格 < SMA200，但位於短期止損 ({sniper_stop:.2f}) 之上。"
+                else:
+                    signal_code = -1; color_class = "red"; action_html = "▼ 清倉離場 (Bear Market)"
+                    status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200:.2f})。"
+            
+            elif is_panic:
+                signal_code = 0; color_class = "yellow"; action_html = "⚠️ 恐慌觀望 (High Volatility)"
+                status_html = f"今日震幅 > {panic_mult}x ATR。"
+                
+            else:
+                if current_price < val_price:
+                    signal_code = 1; color_class = "green"; action_html = "★ 強力抄底 (Dip Buy)"
+                    status_html = "價格回調至 VAL，勝率最高點 (Dip Buy)。"
+                    
+                elif current_price < stop_price:
+                     signal_code = -2; color_class = "red"; action_html = "▼ 獲利了結 (ATR Stop)"
+                     status_html = f"跌破 ATR 止盈線 ({stop_price:.2f})，執行嚴格風控。"
+                
+                elif current_price > poc_price:
+                    signal_code = 2; color_class = "cyan"; action_html = "▲ 續抱/追勢 (Let Run)"
+                    status_html = f"位於強勢區間 (Price > POC)，趨勢向上。"
+                
+                else:
+                    signal_code = 0; color_class = "yellow"; action_html = "⚠️ 觀察 (Wait)"
+                    status_html = f"位於震盪區間 (VAL < P < POC)，但仍守住 ATR 線。"
+
         # [v3.4 優化] 計算 ATR 止盈距離百分比 + 括號
-        atr_gap_pct = (current_price - stop_price) / current_price * 100
+        atr_gap_pct = (current_price - active_stop_price) / current_price * 100
         if atr_gap_pct < 0: gap_color = "#ff7b72"
         elif atr_gap_pct < 1.5: gap_color = "#d29922"
         else: gap_color = "#3fb950"
-        
-        signal_code = 0
-        action_html, status_html, color_class = "", "", ""
-        
-        # --- 決策樹 (ATR 全域優先) ---
-        if is_sniper_zone:
-            signal_code = 3; color_class = "orange"; action_html = "🔫 狙擊手進場 (Sniper Buy)"
-            status_html = f"RSI({rsi:.1f})<30 且 乖離({bias*100:.1f}%)<-11%。<br>建議投入 50% 資金。"
-        
-        elif not is_bull_market:
-            if current_price > sniper_stop:
-                signal_code = -3; color_class = "orange"; action_html = "🛡️ 狙擊單續抱 (Sniper Hold)"
-                status_html = f"價格 < SMA200，但位於短期止損 ({sniper_stop:.2f}) 之上。"
-            else:
-                signal_code = -1; color_class = "red"; action_html = "▼ 清倉離場 (Bear Market)"
-                status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200:.2f})。"
-        
-        elif is_panic:
-            signal_code = 0; color_class = "yellow"; action_html = "⚠️ 恐慌觀望 (High Volatility)"
-            status_html = f"今日震幅 > {panic_mult}x ATR。"
-            
-        else:
-            if current_price < val_price:
-                signal_code = 1; color_class = "green"; action_html = "★ 強力抄底 (Dip Buy)"
-                status_html = "價格回調至 VAL，勝率最高點 (Dip Buy)。"
-                
-            elif current_price < stop_price:
-                 signal_code = -2; color_class = "red"; action_html = "▼ 獲利了結 (ATR Stop)"
-                 status_html = f"跌破 ATR 止盈線 ({stop_price:.2f})，執行嚴格風控。"
-            
-            elif current_price > poc_price:
-                signal_code = 2; color_class = "cyan"; action_html = "▲ 續抱/追勢 (Let Run)"
-                status_html = f"位於強勢區間 (Price > POC)，趨勢向上。"
-            
-            else:
-                signal_code = 0; color_class = "yellow"; action_html = "⚠️ 觀察 (Wait)"
-                status_html = f"位於震盪區間 (VAL < P < POC)，但仍守住 ATR 線。"
 
         chart_base64 = generate_chart(df_daily, df_slice, sma200, poc_price, val_price, vah_price, bin_mids, vol_bin, stop_price, sniper_stop)
 
@@ -305,7 +331,10 @@ def calculate_data(ticker):
             'status_html': status_html, 'action_html': action_html, 'color_class': color_class,
             'signal_code': signal_code, 'chart_base64': chart_base64,
             'atr_gap_pct': atr_gap_pct,
-            'gap_color': gap_color
+            'gap_color': gap_color,
+            # 保留同步數據供前端顯示
+            'active_stop_price': active_stop_price, 'active_stop_label': active_stop_label,
+            'stop_color_css': stop_color_css
         }
     except Exception as e:
         print(f"Error processing {ticker}: {e}")
@@ -315,7 +344,7 @@ def calculate_data(ticker):
 # 5. PART B: 回測與 YTD 生成 (trades.html)
 # ==========================================
 def run_qqq_backtest():
-    print("⏳ 正在計算 QQQ 交易紀錄與 YTD 績效...")
+    print("⏳ 正在計算 QQQ 交易紀錄與 YTD 績效 (包含狀態同步)...")
     start_date = config.START_DATE
     df = yf.download("QQQ", start=start_date, interval="1d", progress=False)
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
@@ -446,8 +475,9 @@ def run_qqq_backtest():
             'Entry Price': entry_price, 'Exit Price': closes[-1], 'PnL %': unrealized_pnl,
             'Hold Days': (dates[-1] - entry_date).days, 'Reason': 'OPEN'
         })
-
-    return pd.DataFrame(trade_log), pd.DataFrame(equity_curve).set_index('Date')
+    
+    current_status = {'in_pos': in_pos, 'is_fishing': is_fishing, 'type': entry_type if in_pos else "NONE"}
+    return pd.DataFrame(trade_log), pd.DataFrame(equity_curve).set_index('Date'), current_status
 
 def generate_trades_html(df_trades, df_eq):
     current_year = datetime.datetime.now().year
@@ -526,11 +556,17 @@ def generate_trades_html(df_trades, df_eq):
 # ==========================================
 # 6. 生成 HTML
 # ==========================================
+# 1. 先跑回測，取得 QQQ 的真實持倉狀態
+df_trades, df_eq, qqq_status = run_qqq_backtest()
+
 # A. index.html
 cards_html = ""
 market_signals = {}
 for ticker in target_tickers:
-    res = calculate_data(ticker)
+    # 只有 QQQ 會傳入回測狀態，其他標的目前只有訊號
+    status_to_pass = qqq_status if ticker == "QQQ" else None
+    res = calculate_data(ticker, status_to_pass)
+    
     if res:
         market_signals[ticker] = res['signal_code']
         header = f'<div class="header {res["color_class"]}"><span>{res["name"]}</span><span class="tag {res["color_class"]}" style="border-color: currentColor;">{res["ticker"]}</span></div>'
@@ -539,10 +575,10 @@ for ticker in target_tickers:
             {header}
             <div class="row"><span>現價:</span> <span>{res['price']:.2f}</span></div>
             <div class="row">
-                <span>ATR 止盈:</span> 
+                <span>{res['active_stop_label']}:</span> 
                 <span>
                     <span style="color:{res['gap_color']}; font-size:0.9em; margin-right:5px;">[{res['atr_gap_pct']:+.2f}%]</span>
-                    <span style="color:{COLOR_ATR_STOP}">{res['stop_price']:.2f}</span> 
+                    <span style="color:{res['stop_color_css']}">{res['active_stop_price']:.2f}</span> 
                 </span>
             </div>
             <div class="row"><span>Sniper 止損:</span> <span style="color:{COLOR_SNIPER_STOP}">{res['sniper_stop']:.2f}</span></div>
@@ -580,8 +616,8 @@ html_index = get_html_header("Quant Dashboard - Signals", "signal") + \
 with open("index.html", "w", encoding="utf-8") as f: f.write(html_index)
 
 # B. trades.html
-df_trades, df_eq = run_qqq_backtest()
 html_trades = get_html_header("Quant Dashboard - Trades", "trade") + generate_trades_html(df_trades, df_eq) + get_html_footer(m_class, m_msg)
 with open("trades.html", "w", encoding="utf-8") as f: f.write(html_trades)
 
-print("✅ Main Dashboard Updated (v3.4 - UI Final Polish).")
+print(f"✅ Main Dashboard Updated (v3.7 - UI Clenup & Logic Synced).")
+print(f"   目前狀態: {'FISHING (狙擊)' if qqq_status['is_fishing'] else 'CORE (正規)' if qqq_status['in_pos'] else 'EMPTY (空手)'}")
