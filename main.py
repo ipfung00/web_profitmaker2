@@ -394,11 +394,12 @@ def run_qqq_backtest():
         curr_rsi = rsis[i]
         curr_bias = biases[i]
         
-        # VP
-        p_slice = tps[i-lookback_days : i]
-        v_slice = volumes[i-lookback_days : i]
-        range_min = np.min(lows[i-lookback_days : i])
-        range_max = np.max(highs[i-lookback_days : i])
+        # [v3.9] Sync with Signals: Include today's data (i) in VP calculation
+        p_slice = tps[i-lookback_days+1 : i+1]
+        v_slice = volumes[i-lookback_days+1 : i+1]
+        range_min = np.min(lows[i-lookback_days+1 : i+1])
+        range_max = np.max(highs[i-lookback_days+1 : i+1])
+
         vol_bin, bin_edges = np.histogram(p_slice, bins=bins_count, range=(range_min, range_max), weights=v_slice)
         poc_idx = np.argmax(vol_bin)
         bin_mids = (bin_edges[:-1] + bin_edges[1:]) / 2
@@ -619,5 +620,5 @@ with open("index.html", "w", encoding="utf-8") as f: f.write(html_index)
 html_trades = get_html_header("Quant Dashboard - Trades", "trade") + generate_trades_html(df_trades, df_eq) + get_html_footer(m_class, m_msg)
 with open("trades.html", "w", encoding="utf-8") as f: f.write(html_trades)
 
-print(f"✅ Main Dashboard Updated (v3.7 - UI Clenup & Logic Synced).")
+print(f"✅ Main Dashboard Updated (v3.9 - Immediate Sync Backtest).")
 print(f"   目前狀態: {'FISHING (狙擊)' if qqq_status['is_fishing'] else 'CORE (正規)' if qqq_status['in_pos'] else 'EMPTY (空手)'}")
