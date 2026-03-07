@@ -25,7 +25,7 @@ import config  # <--- 引入配置檔
 # ==========================================
 OUTPUT_FILE = "structure_bottom.html"
 TICKER = config.TICKER
-LOOKBACK_YEARS = 5
+LOOKBACK_YEARS = 10
 
 plt.style.use('dark_background')
 COLOR_TEXT = '#c9d1d9'
@@ -60,22 +60,23 @@ def analyze_structure():
     df['RSI'] = calculate_rsi(df['Close'], 14)
     df['Bias'] = (df['Close'] - df['SMA200']) / df['SMA200']
     
-    # 找出顯著的波段低點
+    # 找出顯著的波段低點 (過濾掉太近的雜訊)
     n = 20 
     df['Min'] = df.iloc[argrelextrema(df['Close'].values, np.less_equal, order=n)[0]]['Close']
     
-    # 篩選出顯著低點
+    # 篩選出顯著低點 (必須在年線之下才算真正的恐慌底)
     deep_bottoms = df[(df['Min'] > 0) & (df['Close'] < df['SMA200'])].copy()
     
     return df, deep_bottoms
 
 # ==========================================
-# 3. 圖表繪製
+# 3. 圖表繪製 (改善 2: 加入 Bias 乖離率子圖)
 # ==========================================
 def generate_structure_chart(df, bottoms):
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), sharex=True, height_ratios=[3, 1], facecolor=COLOR_CARD)
+    # 改為 3 層圖表
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True, height_ratios=[3, 1, 1], facecolor=COLOR_CARD)
     
-    # 上圖：價格與 SMA200
+    # --- 上圖：價格與 SMA200 ---
     ax1.set_facecolor(COLOR_CARD)
     ax1.plot(df.index, df['Close'], color='white', linewidth=1, label='Price')
     ax1.plot(df.index, df['SMA200'], color='gray', linestyle='--', linewidth=1, label='SMA200')
@@ -86,20 +87,31 @@ def generate_structure_chart(df, bottoms):
     ax1.legend(facecolor=COLOR_CARD, edgecolor='#30363d', labelcolor='white')
     ax1.grid(True, color='#30363d', linestyle=':', alpha=0.5)
     
-    # 下圖：RSI
+    # --- 中圖：RSI ---
     ax2.set_facecolor(COLOR_CARD)
     ax2.plot(df.index, df['RSI'], color='#58a6ff', linewidth=1)
-    ax2.axhline(30, color='red', linestyle='--', linewidth=0.8)
-    ax2.axhline(Current_Sniper_RSI, color='#f0883e', linestyle=':', linewidth=1, label=f'Threshold ({Current_Sniper_RSI})')
+    ax2.axhline(30, color='gray', linestyle='--', linewidth=0.8)
+    ax2.axhline(Current_Sniper_RSI, color='#f0883e', linestyle=':', linewidth=1.5, label=f'RSI Threshold ({Current_Sniper_RSI})')
     ax2.set_ylabel("RSI", color=COLOR_TEXT)
     ax2.set_ylim(10, 80)
+    ax2.legend(loc='upper right', facecolor=COLOR_CARD, edgecolor='#30363d', labelcolor='white', fontsize='small')
     ax2.grid(True, color='#30363d', linestyle=':', alpha=0.5)
+
+    # --- 下圖：Bias 乖離率 ---
+    ax3.set_facecolor(COLOR_CARD)
+    ax3.plot(df.index, df['Bias'] * 100, color='#a371f7', linewidth=1)
+    ax3.axhline(0, color='gray', linestyle='--', linewidth=0.8)
+    ax3.axhline(Current_Sniper_Bias * 100, color='#f0883e', linestyle=':', linewidth=1.5, label=f'Bias Threshold ({Current_Sniper_Bias*100:.1f}%)')
+    ax3.set_ylabel("Bias (%)", color=COLOR_TEXT)
+    ax3.legend(loc='lower right', facecolor=COLOR_CARD, edgecolor='#30363d', labelcolor='white', fontsize='small')
+    ax3.grid(True, color='#30363d', linestyle=':', alpha=0.5)
     
     # X 軸格式
-    ax2.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
-    plt.setp(ax2.get_xticklabels(), rotation=45, ha='right', color=COLOR_TEXT)
+    ax3.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+    plt.setp(ax3.get_xticklabels(), rotation=45, ha='right', color=COLOR_TEXT)
     ax1.tick_params(colors=COLOR_TEXT)
     ax2.tick_params(colors=COLOR_TEXT)
+    ax3.tick_params(colors=COLOR_TEXT)
     
     plt.tight_layout()
     
@@ -110,7 +122,7 @@ def generate_structure_chart(df, bottoms):
     return base64.b64encode(buf.read()).decode('utf-8')
 
 # ==========================================
-# 4. HTML 生成 (修正版)
+# 4. HTML 生成 (改善 1: 加入容錯時間窗)
 # ==========================================
 def generate_html(df, bottoms, chart_b64):
     
@@ -121,22 +133,43 @@ def generate_html(df, bottoms, chart_b64):
     
     for idx, row in bottoms.iterrows():
         d_str = idx.strftime('%Y-%m-%d')
-        rsi = row['RSI']
-        bias = row['Bias']
         
-        rsi_vals.append(rsi)
-        bias_vals.append(bias)
+        # 建立容錯時間窗：往前 5 天到往後 5 天 (涵蓋真正的交易日)
+        start_date = idx - pd.Timedelta(days=5)
+        end_date = idx + pd.Timedelta(days=5)
+        window_df = df.loc[start_date:end_date]
         
-        is_triggered = (rsi < Current_Sniper_RSI and bias < Current_Sniper_Bias)
-        status = "<span class='green'>✅ CAUGHT</span>" if is_triggered else "<span class='red'>❌ MISSED</span>"
-        if not is_triggered: missed_count += 1
+        # 檢查視窗內是否曾經觸發過 Sniper 條件
+        triggered_in_window = window_df[(window_df['RSI'] < Current_Sniper_RSI) & (window_df['Bias'] < Current_Sniper_Bias)]
+        
+        if not triggered_in_window.empty:
+            # 如果有觸發，找出觸發時最極端的那一天來顯示
+            best_trigger = triggered_in_window.loc[triggered_in_window['Bias'].idxmin()]
+            rsi_to_show = best_trigger['RSI']
+            bias_to_show = best_trigger['Bias']
+            trigger_date_str = best_trigger.name.strftime('%m-%d')
+            
+            # 若不是在最低點當天觸發，加上小字提示
+            if best_trigger.name == idx:
+                status = "<span class='green bold'>✅ CAUGHT (精準)</span>"
+            else:
+                status = f"<span class='green'>✅ CAUGHT</span><br><small class='gray'>(於 {trigger_date_str} 觸發)</small>"
+        else:
+            # 完全沒觸發，顯示最低點當天的數據
+            rsi_to_show = row['RSI']
+            bias_to_show = row['Bias']
+            status = "<span class='red bold'>❌ MISSED</span>"
+            missed_count += 1
+            
+        rsi_vals.append(rsi_to_show)
+        bias_vals.append(bias_to_show)
             
         table_rows += f"""
         <tr>
             <td>{d_str}</td>
             <td>{row['Close']:.2f}</td>
-            <td>{rsi:.1f}</td>
-            <td>{bias*100:.1f}%</td>
+            <td>{rsi_to_show:.1f}</td>
+            <td>{bias_to_show*100:.1f}%</td>
             <td>{status}</td>
         </tr>
         """
@@ -150,12 +183,11 @@ def generate_html(df, bottoms, chart_b64):
         diag_msg = f"⚠️ 警告: 平均底部 RSI ({avg_rsi:.1f}) 高於設定值 ({Current_Sniper_RSI})。"
     elif miss_rate > 50:
         diag_color = "red"
-        diag_msg = f"❌ 嚴重: 錯失率高達 {miss_rate:.0f}%，請放寬 Sniper 條件。"
+        diag_msg = f"❌ 嚴重: 即使有容錯窗，錯失率仍高達 {miss_rate:.0f}%，請考慮放寬 Sniper 條件。"
     else:
         diag_color = "green"
-        diag_msg = "✅ 健康: 目前參數能有效捕捉大部分歷史底部。"
+        diag_msg = "✅ 健康: 目前參數能有效涵蓋並捕捉大部分歷史底部。"
 
-    # [修正點] 將 CSS 獨立出來，避免 f-string 解析錯誤
     nav_css = """
         .nav { display: flex; border-bottom: 1px solid #30363d; margin-bottom: 20px; flex-wrap: wrap; }
         .nav-item { padding: 10px 20px; text-decoration: none; color: #8b949e; font-weight: bold; cursor: pointer; }
@@ -185,38 +217,41 @@ def generate_html(df, bottoms, chart_b64):
             .card {{ background-color: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 15px; margin-bottom: 20px; }}
             .header {{ font-size: 1.2em; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #30363d; padding-bottom: 5px; }}
             
-            .stat-box {{ display: flex; justify-content: space-around; text-align: center; margin-bottom: 20px; }}
-            .stat-val {{ font-size: 1.5em; font-weight: bold; margin-top: 5px; color: #c9d1d9; }}
-            .green {{ color: #3fb950; }} .red {{ color: #ff7b72; }} .orange {{ color: #f0883e; }} .gray {{ color: #8b949e; }}
+            .stat-box {{ display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 15px; }}
+            .stat-box div {{ background-color: #21262d; padding: 10px 15px; border-radius: 6px; flex: 1; min-width: 120px; text-align: center; border: 1px solid #30363d; }}
+            .stat-val {{ font-size: 1.5em; font-weight: bold; margin-top: 5px; }}
             
-            table {{ width: 100%; border-collapse: collapse; font-size: 0.9em; }}
-            th, td {{ padding: 10px; text-align: left; border-bottom: 1px solid #30363d; }}
-            th {{ color: #8b949e; }}
+            .green {{ color: #3fb950; }} .red {{ color: #ff7b72; }} .gray {{ color: #8b949e; }} .cyan {{ color: #58a6ff; }} .bold {{ font-weight: bold; }}
+            
+            .chart-container {{ margin-top: 15px; text-align: center; }}
+            .chart-img {{ max-width: 100%; height: auto; display: block; border: 1px solid #30363d; border-radius: 6px; }}
+            
+            table {{ width: 100%; border-collapse: collapse; font-size: 0.9em; text-align: center; }}
+            th, td {{ padding: 10px; border-bottom: 1px solid #30363d; }}
+            th {{ color: #8b949e; background-color: #21262d; }}
             tr:hover {{ background-color: #21262d; }}
             
-            .chart-container {{ text-align: center; margin-top: 20px; }}
-            .chart-img {{ max-width: 100%; height: auto; border: 1px solid #30363d; border-radius: 6px; }}
-            
-            .diag-box {{ padding: 10px; border-radius: 6px; background-color: rgba(255,255,255,0.05); border-left: 5px solid {diag_color}; margin-bottom: 20px; }}
+            .diag-box {{ padding: 15px; border: 1px dashed; border-radius: 6px; font-weight: bold; text-align: center; margin-bottom: 20px; }}
         </style>
     </head>
     <body>
         {nav_html}
         
-        <div style="text-align:right; color:#8b949e; font-size:0.8em; margin-bottom:10px;">
-            更新: {datetime.datetime.now(ZoneInfo("America/New_York")).strftime('%Y-%m-%d %H:%M')}
-        </div>
-
         <div class="card">
-            <div class="header orange">📉 市場底部結構分析 (Bottoms Analysis)</div>
+            <div class="header cyan">📉 過去 {LOOKBACK_YEARS} 年熊市底部結構健檢</div>
+            <div style="color:#8b949e; margin-bottom: 15px;">
+                目前設定 Sniper 門檻: <b>RSI < {Current_Sniper_RSI}</b> 且 <b>乖離率 < {Current_Sniper_Bias*100:.1f}%</b><br>
+                <small>* 判定標準：在歷史低點發生前後 5 天內曾觸發，即視為成功捕捉 (CAUGHT)。</small>
+            </div>
             
             <div class="stat-box">
+                <div><div class="gray">歷史大底次數</div><div class="stat-val">{len(bottoms)} 次</div></div>
                 <div><div class="gray">平均底部 RSI</div><div class="stat-val">{avg_rsi:.1f}</div></div>
                 <div><div class="gray">平均底部 Bias</div><div class="stat-val">{avg_bias*100:.1f}%</div></div>
                 <div><div class="gray">Sniper 捕捉率</div><div class="stat-val {diag_color}">{100-miss_rate:.0f}%</div></div>
             </div>
             
-            <div class="diag-box" style="color: {diag_color};">
+            <div class="diag-box" style="color: {diag_color}; border-color: {diag_color}; background-color: rgba(0,0,0,0.2);">
                 {diag_msg}
             </div>
 
@@ -226,11 +261,11 @@ def generate_html(df, bottoms, chart_b64):
         </div>
 
         <div class="card">
-            <div class="header gray">📋 歷史底部詳細數據</div>
+            <div class="header gray">📋 歷史底部詳細數據 (容錯時間窗判定)</div>
             <table>
                 <thead>
                     <tr>
-                        <th>日期</th><th>價格</th><th>RSI</th><th>乖離率 (Bias)</th><th>狀態</th>
+                        <th>波段最低點日期</th><th>最低價格</th><th>觸發 RSI</th><th>觸發乖離率 (Bias)</th><th>判定狀態</th>
                     </tr>
                 </thead>
                 <tbody>{table_rows}</tbody>
@@ -249,8 +284,5 @@ def generate_html(df, bottoms, chart_b64):
 # ==========================================
 if __name__ == "__main__":
     df, bottoms = analyze_structure()
-    if not bottoms.empty:
-        chart_b64 = generate_structure_chart(df, bottoms)
-        generate_html(df, bottoms, chart_b64)
-    else:
-        print("⚠️ 無法生成報告：過去 5 年沒有符合條件的底部。")
+    chart_b64 = generate_structure_chart(df, bottoms)
+    generate_html(df, bottoms, chart_b64)

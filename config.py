@@ -21,10 +21,10 @@ CORE_PARAMS = {
 # --- 3. 🔫 Sniper Strategy (狙擊手參數) ---
 # 來源: 深海掃描 & 出場監測
 SNIPER_PARAMS = {
-    'RSI_THRESHOLD': 30,       # 狙擊進場 RSI < 30
-    'BIAS_THRESHOLD': -0.11,   # 狙擊進場 乖離率 < -11%
-    'SIZE': 1,               # 狙擊倉位佔比 (0.5 = 50%)
-    'STOP_LOOKBACK': 14        # 狙擊出場 回溯天數 (14天)
+    'RSI_THRESHOLD': 27,       # <--- 從 30 改為 27 (避開 Overfit 雜訊)
+    'BIAS_THRESHOLD': -0.11,   # <--- 維持 -11% (最完美的恐慌深度)
+    'SIZE': 1,                 # <--- 剛才改的 100% 資金全倉接刀
+    'STOP_LOOKBACK': 14        
 }
 
 # --- 4. 🎨 UI & 報告顏色設定 (全系統統一) ---
