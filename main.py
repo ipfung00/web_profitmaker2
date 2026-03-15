@@ -507,11 +507,36 @@ def generate_trades_html(df_trades, df_eq):
         y_strat = (df_ytd['Strategy'] / start_strat - 1) * 100
         y_bh = (df_ytd['BuyHold'] / start_bh - 1) * 100
         
+        # --- 判斷勝負並決定顏色 ---
+        final_date = df_ytd.index[-1]
+        final_val_strat = y_strat.iloc[-1]
+        final_val_bh = y_bh.iloc[-1]
+        
+        diff_val = final_val_strat - final_val_bh
+        diff_sign = "+" if diff_val > 0 else ""
+        
+        # 贏大盤用綠色，輸大盤用紅色
+        strat_color = '#00ff00' if diff_val >= 0 else '#ff7b72'
+        title_color = '#3fb950' if diff_val >= 0 else '#ff7b72'
+        
         fig, ax = plt.subplots(figsize=(10, 5), facecolor='#161b22')
         ax.set_facecolor('#161b22')
-        ax.plot(df_ytd.index, y_strat, color='#00ff00', linewidth=2, label='Strategy (YTD)')
+        
+        # 畫線 (動態顏色)
+        ax.plot(df_ytd.index, y_strat, color=strat_color, linewidth=2, label='Strategy (YTD)')
         ax.plot(df_ytd.index, y_bh, color='#808080', linestyle='--', linewidth=1.5, label='QQQ (YTD)')
-        ax.set_title(f"QQQ Year-to-Date Performance ({current_year})", color='white', fontsize=14)
+        
+        # 在折線的最後一點旁邊加上文字標籤 (動態顏色)
+        ax.text(final_date, final_val_strat, f"  {final_val_strat:+.2f}%", color=strat_color, va='center', fontweight='bold', fontsize=11)
+        ax.text(final_date, final_val_bh, f"  {final_val_bh:+.2f}%", color='#b0b0b0', va='center', fontweight='bold', fontsize=11)
+        
+        # 延伸 X 軸，留出 15% 的空間給右邊的文字
+        x_min, x_max = ax.get_xlim()
+        ax.set_xlim(x_min, x_max + (x_max - x_min) * 0.15)
+        
+        # [BUG FIX] 將標題合併為一行置中，消除中間的巨大空格
+        ax.set_title(f"QQQ Year-to-Date Performance ({current_year}) | Alpha: {diff_sign}{diff_val:.2f}%", color='white', fontsize=14, fontweight='bold')
+        
         ax.set_ylabel("Return (%)", color='#8b949e')
         ax.legend(fontsize=10, facecolor='#161b22', edgecolor='#30363d', labelcolor='white')
         ax.grid(True, color='#30363d', linestyle=':', alpha=0.5)
