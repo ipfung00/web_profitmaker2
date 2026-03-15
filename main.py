@@ -163,7 +163,6 @@ def calculate_rsi(data, window=14):
 # ==========================================
 # 4. PART A: 訊號生成與圖表 (index.html)
 # ==========================================
-# [畫線 BUG 修復] 移除寫死的 stop/sniper 線條，改為動態接收單一有效線條，並將 SMA200 改為曲線
 def generate_chart(df_daily, lookback_slice, sma200_slice, poc_price, val_price, vah_price, price_bins, vol_by_bin, active_stop_price, active_stop_label, stop_color_css, show_sniper_ref):
     fig = plt.figure(figsize=(10, 6), facecolor='#161b22')
     gs = fig.add_gridspec(1, 2,  width_ratios=(3, 1), left=0.05, right=0.95, wspace=0.05)
@@ -177,11 +176,9 @@ def generate_chart(df_daily, lookback_slice, sma200_slice, poc_price, val_price,
 
     mpf.plot(lookback_slice, type='candle', style=mpf_style, ax=ax1, addplot=ap, show_nontrading=False, datetime_format='%Y-%m-%d')
     
-    # [重構] 畫動態止損線 (確保顏色跟標籤對得上)
     if active_stop_price > 0:
         ax1.axhline(y=active_stop_price, color=stop_color_css, linewidth=2, linestyle='-', label=active_stop_label, alpha=0.9)
     
-    # [選配] 只有在空手時，才用虛線畫出預估的 Sniper 防守線當作參考
     if show_sniper_ref > 0:
         ax1.axhline(y=show_sniper_ref, color=COLOR_SNIPER_STOP, linewidth=1.5, linestyle=':', label='預估 Sniper 止損', alpha=0.6)
 
@@ -218,10 +215,9 @@ def calculate_data(ticker, backtest_status=None):
         
         if len(df_daily) < 200: return None
         
-        # [修復 SMA200] 計算完整曲線供畫圖使用
         sma200_series = df_daily['Close'].rolling(window=200).mean()
-        sma200_val = sma200_series.iloc[-1] # 用於邏輯判斷
-        sma200_chart = sma200_series.iloc[-lookback_days:] # 用於畫圖
+        sma200_val = sma200_series.iloc[-1]
+        sma200_chart = sma200_series.iloc[-lookback_days:]
         
         prev_close = df_daily['Close'].shift(1)
         tr = pd.concat([df_daily['High']-df_daily['Low'], (df_daily['High']-prev_close).abs(), (df_daily['Low']-prev_close).abs()], axis=1).max(axis=1)
@@ -265,15 +261,12 @@ def calculate_data(ticker, backtest_status=None):
         val_price = bin_mids[low]
         vah_price = bin_mids[up]
         
-        # 本地計算的備用 Stop (僅供空手時繪圖與邏輯參考)
         recent_highest_close = df_chart['Close'].max()
         local_stop_price = recent_highest_close - (atr_mult * atr)
         
-        # [修復時差 BUG] Sniper 止損應抓取前 14 天，不含今天 (對齊 Backtest 的 shift(1))
         short_term_high = df_daily['Close'].iloc[-sniper_stop_lookback-1 : -1].max()
         local_sniper_stop = short_term_high - (atr_mult * atr)
         
-        # 初始化預設值
         signal_code = 0
         action_html, status_html, color_class = "", "", ""
 
@@ -281,10 +274,9 @@ def calculate_data(ticker, backtest_status=None):
         # 狀態判定與止損線指派 (保證 UI 與 底層一致)
         # ==============================================================
         if backtest_status and backtest_status['in_pos']:
-            # 取得回測引擎傳遞過來的真實止損價
             active_stop_price = backtest_status.get('real_stop_price', local_stop_price)
-            show_sniper_ref = 0 # 持倉時不需要畫假的 Sniper 線干擾
-            html_sniper_row = "" # UI 隱藏
+            show_sniper_ref = 0 
+            html_sniper_row = "" 
             
             if backtest_status['is_fishing']:
                 active_stop_label = "Sniper 止損"
@@ -299,16 +291,16 @@ def calculate_data(ticker, backtest_status=None):
                 color_class = "purple"; action_html = "🚀 趨勢續抱 (Core Hold)"
                 status_html = f"狀態同步: 趨勢中。止損線由系統底層精確計算。"
         else:
-            # 空手狀態：顯示「預估」止損
             active_stop_price = local_stop_price
-            active_stop_label = "預估 Core 止盈"
-            stop_color_css = "gray" # 空手時將預估線變灰，避免誤會
+            active_stop_label = "預估 Core 止損"
+            stop_color_css = "gray" 
             show_sniper_ref = local_sniper_stop
             html_sniper_row = f'<div class="row"><span>預估 Sniper 止損:</span> <span style="color:{COLOR_SNIPER_STOP}">{local_sniper_stop:.2f}</span></div>'
             
             if is_sniper_zone:
                 signal_code = 3; color_class = "orange"; action_html = "🔫 狙擊手進場 (Sniper Buy)"
-                status_html = f"RSI({rsi:.1f})<30 且 乖離({bias*100:.1f}%)<-11%。<br>建議投入 {int(sniper_size*100)}% 資金。"
+                # [BUG FIX 1] 移除硬編碼，從變數動態讀取 RSI 與 Bias 參數門檻
+                status_html = f"RSI({rsi:.1f})<{sniper_rsi_threshold} 且 乖離({bias*100:.1f}%)<{sniper_bias_threshold*100:.0f}%。<br>建議投入 {int(sniper_size*100)}% 資金。"
             
             elif not is_bull_market:
                 if current_price > local_sniper_stop:
@@ -323,14 +315,14 @@ def calculate_data(ticker, backtest_status=None):
                 status_html = f"今日震幅 > {panic_mult}x ATR。"
                 
             else:
-                if current_price < val_price:
-                    signal_code = 1; color_class = "green"; action_html = "★ 強力抄底 (Dip Buy)"
-                    status_html = "價格回調至 VAL，勝率最高點 (Dip Buy)。"
-                    
-                elif current_price < local_stop_price:
-                     signal_code = -2; color_class = "red"; action_html = "▼ 獲利了結 (ATR Stop)"
-                     status_html = f"跌破 ATR 止盈線 ({local_stop_price:.2f})，執行嚴格風控。"
+                if current_price < local_stop_price:
+                     signal_code = -2; color_class = "red"; action_html = "🛑 趨勢破壞 (Trend Broken)"
+                     status_html = f"跌破預估 ATR 防守線 ({local_stop_price:.2f})，多頭波段結束/觀望。"
                 
+                elif current_price < val_price:
+                    signal_code = 1; color_class = "green"; action_html = "★ 強力抄底 (Dip Buy)"
+                    status_html = "價格回調至 VAL，且守住 ATR 支撐，勝率最高點。"
+                    
                 elif current_price > poc_price:
                     signal_code = 2; color_class = "cyan"; action_html = "▲ 續抱/追勢 (Let Run)"
                     status_html = f"位於強勢區間 (Price > POC)，趨勢向上。"
@@ -339,7 +331,6 @@ def calculate_data(ticker, backtest_status=None):
                     signal_code = 0; color_class = "yellow"; action_html = "⚠️ 觀察 (Wait)"
                     status_html = f"位於震盪區間 (VAL < P < POC)，但仍守住 ATR 線。"
 
-        # 計算 ATR 止盈距離百分比
         atr_gap_pct = (current_price - active_stop_price) / current_price * 100
         if atr_gap_pct < 0: gap_color = "#ff7b72"
         elif atr_gap_pct < 1.5: gap_color = "#d29922"
@@ -414,7 +405,6 @@ def run_qqq_backtest():
         curr_rsi = rsis[i]
         curr_bias = biases[i]
         
-        # 嚴格模式: Exclude today's data (i)
         p_slice = tps[i-lookback_days : i]
         v_slice = volumes[i-lookback_days : i]
         range_min = np.min(lows[i-lookback_days : i])
@@ -618,10 +608,11 @@ for ticker in target_tickers:
         """
 
 s_qqq = market_signals.get('QQQ', 0)
-if s_qqq == 3: v_title, v_cls, v_msg = "🔫 狙擊時刻 (Sniper)", "orange", "市場極度恐慌，建議全倉 (100%) 進場接刀。"
+if s_qqq == 3: v_title, v_cls, v_msg = "🔫 狙擊時刻 (Sniper)", "orange", "市場極度恐慌，建議全倉進場接刀。"
 elif s_qqq == -3: v_title, v_cls, v_msg = "🛡️ 狙擊防守 (Hold)", "orange", "熊市反彈中，狙擊單續抱。"
 elif s_qqq == -1: v_title, v_cls, v_msg = "🚨 熊市警報", "red", "跌破年線，全數清倉。"
-elif s_qqq == -2: v_title, v_cls, v_msg = "💰 獲利了結", "red", "跌破 ATR 止盈線，波段結束。"
+# [BUG FIX 2] 修正空手狀態下的文字顯示邏輯
+elif s_qqq == -2: v_title, v_cls, v_msg = "🛑 趨勢破壞", "red", "跌破 ATR 防守線，多頭波段結束/觀望。"
 elif s_qqq == 1: v_title, v_cls, v_msg = "🎯 絕佳買點", "green", "回測 VAL 支撐，進場抄底。"
 elif s_qqq == 2: v_title, v_cls, v_msg = "🚀 趨勢續抱", "purple", "建議持有 QQQ。"
 else: v_title, v_cls, v_msg = "⚖️ 震盪觀察", "yellow", "區間震盪，等待方向。"
@@ -643,4 +634,4 @@ with open("index.html", "w", encoding="utf-8") as f: f.write(html_index)
 html_trades = get_html_header("Quant Dashboard - Trades", "trade") + generate_trades_html(df_trades, df_eq) + get_html_footer(m_class, m_msg)
 with open("trades.html", "w", encoding="utf-8") as f: f.write(html_trades)
 
-print(f"✅ Main Dashboard Updated (v3.8 Strict - Perfect Chart & UI Logic).")
+print(f"✅ Main Dashboard Updated (v3.8 Strict - UI Text Synced).")
