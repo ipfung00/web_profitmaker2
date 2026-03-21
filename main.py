@@ -78,7 +78,7 @@ def get_html_header(title, active_tab):
         .green {{ color: #3fb950; }} .red {{ color: #ff7b72; }} .yellow {{ color: #d29922; }} 
         .cyan {{ color: #58a6ff; }} .gray {{ color: #8b949e; }} .purple {{ color: #a371f7; }} .orange {{ color: #f0883e; }}
         .bold {{ font-weight: bold; }} 
-        .row {{ display: flex; justify-content: space-between; margin-bottom: 5px; }}
+        .row {{ display: flex; justify-content: space-between; margin-bottom: 8px; align-items: center; }}
         
         .verdict {{ background-color: #161b22; border: 1px solid #8b949e; padding: 20px; margin-top: 30px; }}
         .verdict-title {{ font-size: 1.5em; text-align: center; margin-bottom: 15px; font-weight: bold; }}
@@ -110,6 +110,8 @@ def get_html_header(title, active_tab):
         .m-alert {{ color: #ff7b72; border: 1px solid #ff7b72; padding: 10px; border-radius: 6px; background-color: rgba(255, 123, 114, 0.1); font-weight: bold; }}
         .m-warning {{ color: #d29922; border: 1px solid #d29922; padding: 10px; border-radius: 6px; background-color: rgba(210, 153, 34, 0.1); font-weight: bold; }}
         .m-normal {{ color: #8b949e; border: 1px dashed #30363d; padding: 10px; border-radius: 6px; }}
+        
+        .exposure-badge {{ padding: 4px 8px; border-radius: 4px; font-size: 0.9em; border: 1px solid #30363d; background-color: #21262d; }}
     </style>
 </head>
 <body>
@@ -169,7 +171,6 @@ def generate_chart(df_daily, lookback_slice, sma200_slice, poc_price, val_price,
     ax1 = fig.add_subplot(gs[0])
     ax2 = fig.add_subplot(gs[1], sharey=ax1)
 
-    # 準備外加的曲線 (SMA200)
     ap = []
     if not sma200_slice.isna().all():
         ap.append(mpf.make_addplot(sma200_slice, color='gray', linestyle='--', width=1.2, ax=ax1))
@@ -269,52 +270,69 @@ def calculate_data(ticker, backtest_status=None):
         
         signal_code = 0
         action_html, status_html, color_class = "", "", ""
+        exposure_html = "" # <--- 新增: 追蹤資金曝險的 HTML 標籤
 
         # ==============================================================
         # 狀態判定與止損線指派 (保證 UI 與 底層一致)
         # ==============================================================
-        if backtest_status and backtest_status['in_pos']:
-            active_stop_price = backtest_status.get('real_stop_price', local_stop_price)
-            show_sniper_ref = 0 
-            html_sniper_row = "" 
-            
-            if backtest_status['is_fishing']:
-                active_stop_label = "Sniper 止損"
-                stop_color_css = COLOR_SNIPER_STOP
-                signal_code = -3 
-                color_class = "orange"; action_html = "🛡️ 狙擊單續抱 (Sniper Hold)"
-                status_html = f"狀態同步: 狙擊中。止損參考近 {sniper_stop_lookback} 日高點。"
+        if backtest_status:
+            # --- 處理有真實帳戶連動的標的 (QQQ) ---
+            if backtest_status['in_pos']:
+                active_stop_price = backtest_status.get('real_stop_price', local_stop_price)
+                exp_pct = backtest_status.get('exposure_pct', 100)
+                show_sniper_ref = 0 
+                html_sniper_row = "" 
+                
+                if backtest_status['is_fishing']:
+                    active_stop_label = "Sniper 止損"
+                    stop_color_css = COLOR_SNIPER_STOP
+                    signal_code = -3 
+                    color_class = "orange"; action_html = "🛡️ 狙擊單續抱 (Sniper Hold)"
+                    status_html = f"狀態同步: 狙擊中。止損參考近 {sniper_stop_lookback} 日高點。"
+                    exposure_html = f"<span class='exposure-badge' style='color:{COLOR_SNIPER_STOP}; border-color:{COLOR_SNIPER_STOP};'>🟠 {int(exp_pct)}% (Sniper)</span>"
+                else:
+                    active_stop_label = "ATR 止盈"
+                    stop_color_css = COLOR_ATR_STOP
+                    signal_code = 2 
+                    color_class = "purple"; action_html = "🚀 趨勢續抱 (Core Hold)"
+                    status_html = f"狀態同步: 趨勢中。止損線由系統底層精確計算。"
+                    exposure_html = f"<span class='exposure-badge' style='color:#a371f7; border-color:#a371f7;'>🟣 {int(exp_pct)}% (Core)</span>"
             else:
-                active_stop_label = "ATR 止盈"
-                stop_color_css = COLOR_ATR_STOP
-                signal_code = 2 
-                color_class = "purple"; action_html = "🚀 趨勢續抱 (Core Hold)"
-                status_html = f"狀態同步: 趨勢中。止損線由系統底層精確計算。"
+                # QQQ 空手
+                active_stop_price = local_stop_price
+                active_stop_label = "預估 Core 止損"
+                stop_color_css = "gray" 
+                show_sniper_ref = local_sniper_stop
+                html_sniper_row = f'<div class="row"><span>預估 Sniper 止損:</span> <span style="color:{COLOR_SNIPER_STOP}">{local_sniper_stop:.2f}</span></div>'
+                exposure_html = f"<span class='exposure-badge gray'>⚪ 0% (Empty)</span>"
         else:
+            # --- 處理雷達模式的標的 (SPY / IWM) ---
             active_stop_price = local_stop_price
             active_stop_label = "預估 Core 止損"
             stop_color_css = "gray" 
             show_sniper_ref = local_sniper_stop
             html_sniper_row = f'<div class="row"><span>預估 Sniper 止損:</span> <span style="color:{COLOR_SNIPER_STOP}">{local_sniper_stop:.2f}</span></div>'
-            
+            exposure_html = f"<span class='exposure-badge gray'>📡 觀察名單 (Watchlist)</span>"
+
+        # --------------------------------------------------------------
+        # 產生買賣訊號 (針對空手狀態)
+        # --------------------------------------------------------------
+        if not (backtest_status and backtest_status['in_pos']):
             if is_sniper_zone:
                 signal_code = 3; color_class = "orange"; action_html = "🔫 狙擊手進場 (Sniper Buy)"
-                # [BUG FIX 1] 移除硬編碼，從變數動態讀取 RSI 與 Bias 參數門檻
                 status_html = f"RSI({rsi:.1f})<{sniper_rsi_threshold} 且 乖離({bias*100:.1f}%)<{sniper_bias_threshold*100:.0f}%。<br>建議投入 {int(sniper_size*100)}% 資金。"
             
             elif not is_bull_market:
-                if current_price > local_sniper_stop:
-                    signal_code = -3; color_class = "orange"; action_html = "🛡️ 狙擊單續抱 (Sniper Hold)"
-                    status_html = f"價格 < SMA200，但位於短期止損 ({local_sniper_stop:.2f}) 之上。"
-                else:
-                    signal_code = -1; color_class = "red"; action_html = "▼ 清倉離場 (Bear Market)"
-                    status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200_val:.2f})。"
+                # 【BUG FIX】: 空手時跌破年線，就是純粹熊市觀望
+                signal_code = -1; color_class = "red"; action_html = "▼ 熊市觀望 (Bear Market)"
+                status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200_val:.2f})，趨勢偏空，請保持空手。"
             
             elif is_panic:
                 signal_code = 0; color_class = "yellow"; action_html = "⚠️ 恐慌觀望 (High Volatility)"
                 status_html = f"今日震幅 > {panic_mult}x ATR。"
                 
             else:
+                # 【BUG FIX】: 風控優先判斷
                 if current_price < local_stop_price:
                      signal_code = -2; color_class = "red"; action_html = "🛑 趨勢破壞 (Trend Broken)"
                      status_html = f"跌破預估 ATR 防守線 ({local_stop_price:.2f})，多頭波段結束/觀望。"
@@ -342,7 +360,7 @@ def calculate_data(ticker, backtest_status=None):
             'name': ticker_names[ticker], 'ticker': ticker, 'price': current_price,
             'poc': poc_price, 'val': val_price, 'sma200': sma200_val,
             'active_stop_price': active_stop_price, 'active_stop_label': active_stop_label, 'stop_color_css': stop_color_css,
-            'html_sniper_row': html_sniper_row,
+            'html_sniper_row': html_sniper_row, 'exposure_html': exposure_html,
             'status_html': status_html, 'action_html': action_html, 'color_class': color_class,
             'signal_code': signal_code, 'chart_base64': chart_base64,
             'atr_gap_pct': atr_gap_pct, 'gap_color': gap_color
@@ -488,11 +506,17 @@ def run_qqq_backtest():
             'Hold Days': (dates[-1] - entry_date).days, 'Reason': 'OPEN'
         })
     
+    # [新增] 將 Exposure (曝險比例) 傳送給前端
+    exposure_pct = 0
+    if in_pos:
+        exposure_pct = (sniper_size * 100) if is_fishing else 100
+        
     current_status = {
         'in_pos': in_pos, 
         'is_fishing': is_fishing, 
         'type': entry_type if in_pos else "NONE",
-        'real_stop_price': real_stop_price if in_pos else 0.0
+        'real_stop_price': real_stop_price if in_pos else 0.0,
+        'exposure_pct': exposure_pct
     }
     return pd.DataFrame(trade_log), pd.DataFrame(equity_curve).set_index('Date'), current_status
 
@@ -507,7 +531,6 @@ def generate_trades_html(df_trades, df_eq):
         y_strat = (df_ytd['Strategy'] / start_strat - 1) * 100
         y_bh = (df_ytd['BuyHold'] / start_bh - 1) * 100
         
-        # --- 判斷勝負並決定顏色 ---
         final_date = df_ytd.index[-1]
         final_val_strat = y_strat.iloc[-1]
         final_val_bh = y_bh.iloc[-1]
@@ -515,26 +538,22 @@ def generate_trades_html(df_trades, df_eq):
         diff_val = final_val_strat - final_val_bh
         diff_sign = "+" if diff_val > 0 else ""
         
-        # 贏大盤用綠色，輸大盤用紅色
         strat_color = '#00ff00' if diff_val >= 0 else '#ff7b72'
         title_color = '#3fb950' if diff_val >= 0 else '#ff7b72'
         
         fig, ax = plt.subplots(figsize=(10, 5), facecolor='#161b22')
         ax.set_facecolor('#161b22')
         
-        # 畫線 (動態顏色)
         ax.plot(df_ytd.index, y_strat, color=strat_color, linewidth=2, label='Strategy (YTD)')
         ax.plot(df_ytd.index, y_bh, color='#808080', linestyle='--', linewidth=1.5, label='QQQ (YTD)')
         
-        # 在折線的最後一點旁邊加上文字標籤 (動態顏色)
         ax.text(final_date, final_val_strat, f"  {final_val_strat:+.2f}%", color=strat_color, va='center', fontweight='bold', fontsize=11)
         ax.text(final_date, final_val_bh, f"  {final_val_bh:+.2f}%", color='#b0b0b0', va='center', fontweight='bold', fontsize=11)
         
-        # 延伸 X 軸，留出 15% 的空間給右邊的文字
         x_min, x_max = ax.get_xlim()
         ax.set_xlim(x_min, x_max + (x_max - x_min) * 0.15)
         
-        # [BUG FIX] 將標題合併為一行置中，消除中間的巨大空格
+        # [修復] 將 Alpha 標題合併為置中單行，避免排版破裂
         ax.set_title(f"QQQ Year-to-Date Performance ({current_year}) | Alpha: {diff_sign}{diff_val:.2f}%", color='white', fontsize=14, fontweight='bold')
         
         ax.set_ylabel("Return (%)", color='#8b949e')
@@ -613,6 +632,7 @@ for ticker in target_tickers:
         cards_html += f"""
         <div class="card">
             {header}
+            <div class="row"><span>持倉曝險:</span> {res['exposure_html']}</div>
             <div class="row"><span>現價:</span> <span>{res['price']:.2f}</span></div>
             <div class="row">
                 <span>{res['active_stop_label']}:</span> 
@@ -636,7 +656,6 @@ s_qqq = market_signals.get('QQQ', 0)
 if s_qqq == 3: v_title, v_cls, v_msg = "🔫 狙擊時刻 (Sniper)", "orange", "市場極度恐慌，建議全倉進場接刀。"
 elif s_qqq == -3: v_title, v_cls, v_msg = "🛡️ 狙擊防守 (Hold)", "orange", "熊市反彈中，狙擊單續抱。"
 elif s_qqq == -1: v_title, v_cls, v_msg = "🚨 熊市警報", "red", "跌破年線，全數清倉。"
-# [BUG FIX 2] 修正空手狀態下的文字顯示邏輯
 elif s_qqq == -2: v_title, v_cls, v_msg = "🛑 趨勢破壞", "red", "跌破 ATR 防守線，多頭波段結束/觀望。"
 elif s_qqq == 1: v_title, v_cls, v_msg = "🎯 絕佳買點", "green", "回測 VAL 支撐，進場抄底。"
 elif s_qqq == 2: v_title, v_cls, v_msg = "🚀 趨勢續抱", "purple", "建議持有 QQQ。"
@@ -659,4 +678,4 @@ with open("index.html", "w", encoding="utf-8") as f: f.write(html_index)
 html_trades = get_html_header("Quant Dashboard - Trades", "trade") + generate_trades_html(df_trades, df_eq) + get_html_footer(m_class, m_msg)
 with open("trades.html", "w", encoding="utf-8") as f: f.write(html_trades)
 
-print(f"✅ Main Dashboard Updated (v3.8 Strict - UI Text Synced).")
+print(f"✅ Main Dashboard Updated (Final Version: Exposure Integrated & UI Synced).")
