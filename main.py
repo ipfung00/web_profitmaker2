@@ -270,7 +270,7 @@ def calculate_data(ticker, backtest_status=None):
         
         signal_code = 0
         action_html, status_html, color_class = "", "", ""
-        exposure_html = "" # <--- 新增: 追蹤資金曝險的 HTML 標籤
+        exposure_html = "" 
 
         # ==============================================================
         # 狀態判定與止損線指派 (保證 UI 與 底層一致)
@@ -323,7 +323,6 @@ def calculate_data(ticker, backtest_status=None):
                 status_html = f"RSI({rsi:.1f})<{sniper_rsi_threshold} 且 乖離({bias*100:.1f}%)<{sniper_bias_threshold*100:.0f}%。<br>建議投入 {int(sniper_size*100)}% 資金。"
             
             elif not is_bull_market:
-                # 【BUG FIX】: 空手時跌破年線，就是純粹熊市觀望
                 signal_code = -1; color_class = "red"; action_html = "▼ 熊市觀望 (Bear Market)"
                 status_html = f"價格 ({current_price:.2f}) 跌破年線 ({sma200_val:.2f})，趨勢偏空，請保持空手。"
             
@@ -332,7 +331,6 @@ def calculate_data(ticker, backtest_status=None):
                 status_html = f"今日震幅 > {panic_mult}x ATR。"
                 
             else:
-                # 【BUG FIX】: 風控優先判斷
                 if current_price < local_stop_price:
                      signal_code = -2; color_class = "red"; action_html = "🛑 趨勢破壞 (Trend Broken)"
                      status_html = f"跌破預估 ATR 防守線 ({local_stop_price:.2f})，多頭波段結束/觀望。"
@@ -359,6 +357,7 @@ def calculate_data(ticker, backtest_status=None):
         return {
             'name': ticker_names[ticker], 'ticker': ticker, 'price': current_price,
             'poc': poc_price, 'val': val_price, 'sma200': sma200_val,
+            'rsi': rsi, 'bias': bias,
             'active_stop_price': active_stop_price, 'active_stop_label': active_stop_label, 'stop_color_css': stop_color_css,
             'html_sniper_row': html_sniper_row, 'exposure_html': exposure_html,
             'status_html': status_html, 'action_html': action_html, 'color_class': color_class,
@@ -506,7 +505,6 @@ def run_qqq_backtest():
             'Hold Days': (dates[-1] - entry_date).days, 'Reason': 'OPEN'
         })
     
-    # [新增] 將 Exposure (曝險比例) 傳送給前端
     exposure_pct = 0
     if in_pos:
         exposure_pct = (sniper_size * 100) if is_fishing else 100
@@ -553,7 +551,6 @@ def generate_trades_html(df_trades, df_eq):
         x_min, x_max = ax.get_xlim()
         ax.set_xlim(x_min, x_max + (x_max - x_min) * 0.15)
         
-        # [修復] 將 Alpha 標題合併為置中單行，避免排版破裂
         ax.set_title(f"QQQ Year-to-Date Performance ({current_year}) | Alpha: {diff_sign}{diff_val:.2f}%", color='white', fontsize=14, fontweight='bold')
         
         ax.set_ylabel("Return (%)", color='#8b949e')
@@ -645,6 +642,7 @@ for ticker in target_tickers:
             <div class="row"><span>POC:</span> <span style="color:#d29922">{res['poc']:.2f}</span></div>
             <div class="row"><span>VAL:</span> <span style="color:#3fb950">{res['val']:.2f}</span></div>
             <div class="row"><span>SMA200:</span> <span style="color:gray">{res['sma200']:.2f}</span></div>
+            <div class="row"><span>RSI / 乖離率:</span> <span style="color:gray">[{res['rsi']:.1f}] / [{res['bias']*100:.1f}%]</span></div>
             <hr style="border: 0; border-top: 1px dashed #30363d;">
             <div class="row"><span>狀態:</span> <span class="{res['color_class']}">{res['status_html']}</span></div>
             <div class="row"><span>指令:</span> <span class="{res['color_class']} bold" style="font-size:1.2em">{res['action_html']}</span></div>

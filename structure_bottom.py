@@ -76,6 +76,10 @@ def generate_structure_chart(df, bottoms):
     # 改為 3 層圖表
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), sharex=True, height_ratios=[3, 1, 1], facecolor=COLOR_CARD)
     
+    # 取得當前最新數值
+    current_rsi = df['RSI'].iloc[-1]
+    current_bias = df['Bias'].iloc[-1] * 100
+    
     # --- 上圖：價格與 SMA200 ---
     ax1.set_facecolor(COLOR_CARD)
     ax1.plot(df.index, df['Close'], color='white', linewidth=1, label='Price')
@@ -92,6 +96,10 @@ def generate_structure_chart(df, bottoms):
     ax2.plot(df.index, df['RSI'], color='#58a6ff', linewidth=1)
     ax2.axhline(30, color='gray', linestyle='--', linewidth=0.8)
     ax2.axhline(Current_Sniper_RSI, color='#f0883e', linestyle=':', linewidth=1.5, label=f'RSI Threshold ({Current_Sniper_RSI})')
+    
+    # 標示當前 RSI 數值
+    ax2.text(df.index[-1], current_rsi, f"  {current_rsi:.1f}", color='#58a6ff', va='center', fontweight='bold', fontsize=10)
+    
     ax2.set_ylabel("RSI", color=COLOR_TEXT)
     ax2.set_ylim(10, 80)
     ax2.legend(loc='upper right', facecolor=COLOR_CARD, edgecolor='#30363d', labelcolor='white', fontsize='small')
@@ -102,16 +110,26 @@ def generate_structure_chart(df, bottoms):
     ax3.plot(df.index, df['Bias'] * 100, color='#a371f7', linewidth=1)
     ax3.axhline(0, color='gray', linestyle='--', linewidth=0.8)
     ax3.axhline(Current_Sniper_Bias * 100, color='#f0883e', linestyle=':', linewidth=1.5, label=f'Bias Threshold ({Current_Sniper_Bias*100:.1f}%)')
+    
+    # 標示當前 Bias 數值
+    ax3.text(df.index[-1], current_bias, f"  {current_bias:.1f}%", color='#a371f7', va='center', fontweight='bold', fontsize=10)
+    
     ax3.set_ylabel("Bias (%)", color=COLOR_TEXT)
     ax3.legend(loc='lower right', facecolor=COLOR_CARD, edgecolor='#30363d', labelcolor='white', fontsize='small')
     ax3.grid(True, color='#30363d', linestyle=':', alpha=0.5)
     
-    # X 軸格式
+    # X 軸格式與延伸
     ax3.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
     plt.setp(ax3.get_xticklabels(), rotation=45, ha='right', color=COLOR_TEXT)
     ax1.tick_params(colors=COLOR_TEXT)
     ax2.tick_params(colors=COLOR_TEXT)
     ax3.tick_params(colors=COLOR_TEXT)
+    
+    # 延伸 X 軸，留出 5% 的空間給右邊的文字
+    x_min, x_max = ax3.get_xlim()
+    ax1.set_xlim(x_min, x_max + (x_max - x_min) * 0.05)
+    ax2.set_xlim(x_min, x_max + (x_max - x_min) * 0.05)
+    ax3.set_xlim(x_min, x_max + (x_max - x_min) * 0.05)
     
     plt.tight_layout()
     
@@ -120,7 +138,6 @@ def generate_structure_chart(df, bottoms):
     plt.close(fig)
     buf.seek(0)
     return base64.b64encode(buf.read()).decode('utf-8')
-
 # ==========================================
 # 4. HTML 生成 (改善 1: 加入容錯時間窗)
 # ==========================================
