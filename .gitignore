@@ -1,5 +1,8 @@
-\old_scripts
-\check_quarterly
-\check_yearly
-\yearly_Charts
+/old_scripts
+/check_yearly
+/yearly_Charts
+/check_quarterly/scan_core_QQQ.csv
+/check_quarterly/check_health_5d.py
+/check_quarterly/scan_5d_quarterly.py
+/check_quarterly/system_simulator_lev.py
 README.xlsx

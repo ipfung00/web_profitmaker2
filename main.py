@@ -661,8 +661,28 @@ else: v_title, v_cls, v_msg = "⚖️ 震盪觀察", "yellow", "區間震盪，�
 
 now = datetime.datetime.now()
 m_months = [1, 4, 7, 10]
-if now.month == 12: m_class, m_msg = "m-alert", "🎯 <b>年度校準警報！</b> 請執行 <code>monitor_market_structure.py</code>。"
-elif (now.month in m_months) and (now.day <= 7): m_class, m_msg = "m-warning", "🔧 <b>季度健檢提醒：</b> 請執行 <code>scan_5d_quarterly.py</code>。"
+
+# --- 新增：智慧偵測報告是否已經執行過 ---
+scan_done_recently = False
+report_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check_quarterly", "scan_quarterly_QQQ.csv")
+if os.path.exists(report_path):
+    # 取得檔案最後修改時間
+    file_mtime = datetime.datetime.fromtimestamp(os.path.getmtime(report_path))
+    # 如果報告是這個月產生的，代表已經做過健檢了！
+    if file_mtime.year == now.year and file_mtime.month == now.month:
+        scan_done_recently = True
+# ------------------------------------
+
+if now.month == 12: 
+    m_class, m_msg = "m-alert", "🎯 <b>年度校準警報！</b> 請執行 <code>monitor_market_structure.py</code>。"
+elif (now.month in m_months) and (now.day <= 7):
+    if scan_done_recently:
+        # 如果已經執行過，就顯示完成，並預告下一次
+        next_check = [m for m in m_months if m > now.month][0] if [m for m in m_months if m > now.month] else 1
+        m_class, m_msg = "m-normal", f"✅ <b>本季健檢已完成！</b><br>下季健檢：{next_check} 月 | 年度校準：12 月。"
+    else:
+        # 還沒執行，跳出警告
+        m_class, m_msg = "m-warning", "🔧 <b>季度健檢提醒：</b> 請執行 <code>scan_5d_quarterly.py</code>。"
 else: 
     next_check = [m for m in m_months if m > now.month][0] if [m for m in m_months if m > now.month] else 1
     m_class, m_msg = "m-normal", f"✅ 系統正常。<br>下季健檢：{next_check} 月 | 年度校準：12 月。"

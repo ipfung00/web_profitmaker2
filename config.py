@@ -15,7 +15,7 @@ CORE_PARAMS = {
     'BINS': 7,             # 價格分箱數
     'VA_PCT': 0.80,        # 價值區成交量佔比
     'ATR_MULT': 2.7,       # ATR 通道倍數
-    'PANIC_MULT': 2.0      # 恐慌定義倍數
+    'PANIC_MULT': 2.2      # 恐慌定義倍數
 }
 
 # --- 3. 🔫 Sniper Strategy (狙擊手參數) ---
