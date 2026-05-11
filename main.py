@@ -387,6 +387,12 @@ def run_qqq_backtest():
     
     roll_max_sniper = df['Close'].rolling(window=sniper_stop_lookback).max().shift(1).fillna(0).values
     
+    # --- 【BUG FIX】加入 Adj Close 確保大盤績效 (BuyHold) 計算精準 ---
+    try:
+        adj_closes = df['Adj Close'].values
+    except KeyError:
+        adj_closes = df['Close'].values
+        
     highs = df['High'].values
     lows = df['Low'].values
     closes = df['Close'].values
@@ -407,7 +413,7 @@ def run_qqq_backtest():
     real_stop_price = 0.0 
     
     start_idx = 200
-    bh_shares = config.INITIAL_CAPITAL / closes[start_idx]
+    bh_shares = config.INITIAL_CAPITAL / adj_closes[start_idx]
     
     equity_curve = []
     trade_log = []
@@ -494,7 +500,7 @@ def run_qqq_backtest():
                 real_stop_price = 0.0
 
         curr_equity = balance + (position * curr_close)
-        curr_bh_equity = bh_shares * curr_close
+        curr_bh_equity = bh_shares * adj_closes[i]
         equity_curve.append({'Date': curr_date, 'Strategy': curr_equity, 'BuyHold': curr_bh_equity})
 
     if in_pos:
@@ -521,11 +527,21 @@ def run_qqq_backtest():
 def generate_trades_html(df_trades, df_eq):
     current_year = datetime.datetime.now().year
     df_ytd = df_eq[df_eq.index.year == current_year].copy()
-    if df_ytd.empty: df_ytd = df_eq.iloc[-250:]
     
+    if df_ytd.empty: 
+        df_ytd = df_eq.iloc[-250:].copy()
+        
     if not df_ytd.empty:
-        start_strat = df_ytd['Strategy'].iloc[0]
-        start_bh = df_ytd['BuyHold'].iloc[0]
+        # 【BUG FIX】精準抓取「去年最後一個交易日」作為基準點 (不污染 DataFrame)
+        last_year_data = df_eq[df_eq.index < df_ytd.index[0]]
+        
+        if not last_year_data.empty:
+            start_strat = last_year_data['Strategy'].iloc[-1]
+            start_bh = last_year_data['BuyHold'].iloc[-1]
+        else:
+            start_strat = df_ytd['Strategy'].iloc[0]
+            start_bh = df_ytd['BuyHold'].iloc[0]
+            
         y_strat = (df_ytd['Strategy'] / start_strat - 1) * 100
         y_bh = (df_ytd['BuyHold'] / start_bh - 1) * 100
         
@@ -614,6 +630,29 @@ def generate_trades_html(df_trades, df_eq):
 # ==========================================
 # 6. 生成 HTML
 # ==========================================
+now = datetime.datetime.now()
+m_months = [1, 4, 7, 10]
+
+# --- 智慧偵測報告是否已經執行過 ---
+scan_done_recently = False
+report_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check_quarterly", "scan_quarterly_QQQ.csv")
+if os.path.exists(report_path):
+    file_mtime = datetime.datetime.fromtimestamp(os.path.getmtime(report_path))
+    if file_mtime.year == now.year and file_mtime.month == now.month:
+        scan_done_recently = True
+
+if now.month == 12: 
+    m_class, m_msg = "m-alert", "🎯 <b>年度校準警報！</b> 請執行 <code>monitor_market_structure.py</code>。"
+elif (now.month in m_months) and (now.day <= 7):
+    if scan_done_recently:
+        next_check = [m for m in m_months if m > now.month][0] if [m for m in m_months if m > now.month] else 1
+        m_class, m_msg = "m-normal", f"✅ <b>本季健檢已完成！</b><br>下季健檢：{next_check} 月 | 年度校準：12 月。"
+    else:
+        m_class, m_msg = "m-warning", "🔧 <b>季度健檢提醒：</b> 請執行 <code>scan_5d_quarterly.py</code>。"
+else: 
+    next_check = [m for m in m_months if m > now.month][0] if [m for m in m_months if m > now.month] else 1
+    m_class, m_msg = "m-normal", f"✅ 系統正常。<br>下季健檢：{next_check} 月 | 年度校準：12 月。"
+
 df_trades, df_eq, qqq_status = run_qqq_backtest()
 
 cards_html = ""
@@ -659,34 +698,6 @@ elif s_qqq == 1: v_title, v_cls, v_msg = "🎯 絕佳買點", "green", "回測 V
 elif s_qqq == 2: v_title, v_cls, v_msg = "🚀 趨勢續抱", "purple", "建議持有 QQQ。"
 else: v_title, v_cls, v_msg = "⚖️ 震盪觀察", "yellow", "區間震盪，等待方向。"
 
-now = datetime.datetime.now()
-m_months = [1, 4, 7, 10]
-
-# --- 新增：智慧偵測報告是否已經執行過 ---
-scan_done_recently = False
-report_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check_quarterly", "scan_quarterly_QQQ.csv")
-if os.path.exists(report_path):
-    # 取得檔案最後修改時間
-    file_mtime = datetime.datetime.fromtimestamp(os.path.getmtime(report_path))
-    # 如果報告是這個月產生的，代表已經做過健檢了！
-    if file_mtime.year == now.year and file_mtime.month == now.month:
-        scan_done_recently = True
-# ------------------------------------
-
-if now.month == 12: 
-    m_class, m_msg = "m-alert", "🎯 <b>年度校準警報！</b> 請執行 <code>monitor_market_structure.py</code>。"
-elif (now.month in m_months) and (now.day <= 7):
-    if scan_done_recently:
-        # 如果已經執行過，就顯示完成，並預告下一次
-        next_check = [m for m in m_months if m > now.month][0] if [m for m in m_months if m > now.month] else 1
-        m_class, m_msg = "m-normal", f"✅ <b>本季健檢已完成！</b><br>下季健檢：{next_check} 月 | 年度校準：12 月。"
-    else:
-        # 還沒執行，跳出警告
-        m_class, m_msg = "m-warning", "🔧 <b>季度健檢提醒：</b> 請執行 <code>scan_5d_quarterly.py</code>。"
-else: 
-    next_check = [m for m in m_months if m > now.month][0] if [m for m in m_months if m > now.month] else 1
-    m_class, m_msg = "m-normal", f"✅ 系統正常。<br>下季健檢：{next_check} 月 | 年度校準：12 月。"
-
 html_index = get_html_header("Quant Dashboard - Signals", "signal") + \
              get_config_html() + \
              cards_html + f"<div class='verdict'><div class='verdict-title {v_cls}'>{v_title}</div><div style='margin-left: 20px;'>{v_msg}</div></div>" + \
@@ -696,4 +707,4 @@ with open("index.html", "w", encoding="utf-8") as f: f.write(html_index)
 html_trades = get_html_header("Quant Dashboard - Trades", "trade") + generate_trades_html(df_trades, df_eq) + get_html_footer(m_class, m_msg)
 with open("trades.html", "w", encoding="utf-8") as f: f.write(html_trades)
 
-print(f"✅ Main Dashboard Updated (Final Version: Exposure Integrated & UI Synced).")
+print(f"✅ Main Dashboard Updated (Final Version: Adj Close & YTD Perfect Alignment).")
