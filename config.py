@@ -5,16 +5,16 @@
 
 # --- 1. 交易標的 ---
 TICKER = "QQQ"
-START_DATE = "2006-01-01"
+START_DATE = "2019-01-01"
 INITIAL_CAPITAL = 10000
 
 # --- 2. 👑 Core Strategy (核心策略參數) ---
 # 來源: 季度健檢 (scan_5d_quarterly.py)
 CORE_PARAMS = {
-    'LOOKBACK': 98,        # 回溯天數
-    'BINS': 7,             # 價格分箱數
-    'VA_PCT': 0.80,        # 價值區成交量佔比
-    'ATR_MULT': 2.7,       # ATR 通道倍數
+    'LOOKBACK': 102,        # 回溯天數
+    'BINS': 8,             # 價格分箱數
+    'VA_PCT': 0.83,        # 價值區成交量佔比
+    'ATR_MULT': 2.9,       # ATR 通道倍數
     'PANIC_MULT': 2      # 恐慌定義倍數
 }
 
